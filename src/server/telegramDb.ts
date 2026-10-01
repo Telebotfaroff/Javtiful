@@ -100,7 +100,7 @@ export class TelegramDb {
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`Telegram GitHub index content read failed: HTTP ${response.status}`);
     const json: any = await response.json();
-    const decoded = Buffer.from(String(json.content || '').replace(/\\n/g, ''), 'base64').toString('utf8');
+    const decoded = Buffer.from(String(json.content || '').replace(/\n/g, ''), 'base64').toString('utf8');
     return { content: JSON.parse(decoded), sha: json.sha };
   }
 
