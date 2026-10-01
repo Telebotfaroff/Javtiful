@@ -1,0 +1,37 @@
+{
+  "code": "016DHT-0881",
+  "telegram": {
+    "channel_id": "-1001928374",
+    "message_id": 601,
+    "video_file_id": "BAACAg_4K_RE_ENCODE_FILE_ID",
+    "duration": 3180,
+    "mime_type": "video/mp4",
+    "media_group_id": "album_group_9901",
+    "gallery": [
+      {
+        "message_id": 602,
+        "file_id": "AgACAg_FULL_1",
+        "width": 1920,
+        "height": 1080
+      },
+      {
+        "message_id": 603,
+        "file_id": "AgACAg_FULL_2",
+        "width": 1920,
+        "height": 1080
+      },
+      {
+        "message_id": 604,
+        "file_id": "AgACAg_FULL_SEPARATE",
+        "width": 1920,
+        "height": 1080
+      }
+    ],
+    "width": 3840,
+    "height": 2160,
+    "file_size": 4500000000
+  },
+  "metadataFound": true,
+  "indexed_at": "2026-10-01T10:45:25.068Z",
+  "updated_at": "2026-10-01T10:55:59.889Z"
+}

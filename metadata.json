@@ -1,0 +1,6 @@
+{
+  "name": "TeleFeed - Telegram Channel Feed & Media Reader",
+  "description": "Automatically stream and display post images and titles from Telegram channel feeds using the Telegram Bot API with real-time background polling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

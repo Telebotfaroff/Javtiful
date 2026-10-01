@@ -1,0 +1,15 @@
+{
+  "code": "200GANA-2385",
+  "telegram": {
+    "channel_id": "-1001928374",
+    "message_id": 991,
+    "video_file_id": "BAACAg_TEST_P",
+    "duration": 1800,
+    "mime_type": "video/mp4",
+    "media_group_id": "persistent_album_8888",
+    "gallery": []
+  },
+  "metadataFound": true,
+  "indexed_at": "2026-10-01T10:45:25.085Z",
+  "updated_at": "2026-10-01T11:07:24.096Z"
+}
