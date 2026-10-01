@@ -25,6 +25,10 @@ export class TelegramIndexer {
 
   static async processPost(post: any): Promise<IndexResult> {
     const channelId = String(post.chat?.id || '');
+    const configuredChannel = process.env.TELEGRAM_CHANNEL_ID?.trim();
+    if (configuredChannel && channelId !== configuredChannel) {
+      return { success: false, channelId, reason: `Ignoring post from unexpected channel ${channelId}` };
+    }
     const messageId = Number(post.message_id || 0);
     const mediaGroupId = post.media_group_id ? String(post.media_group_id) : undefined;
     const caption = post.caption || post.text || '';
