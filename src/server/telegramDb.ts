@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import { Pool } from '@neondatabase/serverless';
 
 export interface TelegramGalleryItem {
   message_id: number;
@@ -37,292 +37,44 @@ export interface PendingMediaGroup {
   updated_at: string;
 }
 
-interface CacheEntry { expiresAt: number; value: unknown; }
-
-const CACHE_TTL = 60_000;
-const MAX_CACHE = 300;
-const BATCH_SIZE = 50;
-const BATCH_DELAY_MS = 1500;
-
 export class TelegramDb {
-  private static cache = new Map<string, CacheEntry>();
-  private static pendingWrites = new Map<string, string | null>();
-  private static flushTimer: ReturnType<typeof setTimeout> | null = null;
-  private static flushPromise: Promise<void> | null = null;
+  private static pool: Pool | null = null;
 
-  static async init(): Promise<void> {}
-
-  private static owner() { return process.env.TELEGRAM_INDEX_GITHUB_OWNER || 'Telebotfaroff'; }
-  private static repo() { return process.env.TELEGRAM_INDEX_GITHUB_REPO || 'javtiful-telegram-index'; }
-  private static branch() { return process.env.TELEGRAM_INDEX_GITHUB_BRANCH || 'main'; }
-  private static token() { return process.env.TELEGRAM_INDEX_GITHUB_TOKEN || process.env.GITHUB_TOKEN || ''; }
-
-  private static apiRoot() { return `https://api.github.com/repos/${this.owner()}/${this.repo()}`; }
-  private static apiBase() { return `${this.apiRoot()}/contents`; }
-  private static rawBase() { return `https://raw.githubusercontent.com/${this.owner()}/${this.repo()}/${encodeURIComponent(this.branch())}`; }
-
-  private static headers(json = false): Record<string, string> {
-    const token = this.token();
-    if (!token) throw new Error('TELEGRAM_INDEX_GITHUB_TOKEN or GITHUB_TOKEN is required for index writes');
-    return {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'JAVTIFUL-Catalog/1.0',
-      ...(json ? { 'Content-Type': 'application/json' } : {}),
-    };
+  private static db() {
+    const url = process.env.DATABASE_URL;
+    if (!url) throw new Error('DATABASE_URL is not configured');
+    if (!this.pool) this.pool = new Pool({ connectionString: url });
+    return this.pool;
   }
 
   private static normalizeCode(code: string) {
     return code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
   }
 
-  private static videoPath(code: string) {
-    const safe = this.normalizeCode(code);
-    const match = safe.match(/^(.+)-([0-9]+)$/);
-    if (!match) throw new Error(`Invalid JAV code: ${code}`);
-    return `videos/${match[1]}/${match[2]}.json`;
-  }
-
-  private static messageShard(key: string) {
-    return `messages/${crypto.createHash('sha256').update(key).digest('hex').slice(0, 2)}.json`;
-  }
-
-  private static mediaGroupPath(id: string) {
-    return `media-groups/${encodeURIComponent(String(id))}.json`;
-  }
-
-  private static pendingGroupPath(id: string) {
-    return `pending-groups/${encodeURIComponent(String(id))}.json`;
-  }
-
-  private static cacheGet<T>(key: string): T | undefined {
-    const item = this.cache.get(key);
-    if (!item) return undefined;
-    if (item.expiresAt < Date.now()) {
-      this.cache.delete(key);
-      return undefined;
-    }
-    return item.value as T;
-  }
-
-  private static cacheSet(key: string, value: unknown) {
-    if (this.cache.size >= MAX_CACHE) {
-      const first = this.cache.keys().next().value;
-      if (first) this.cache.delete(first);
-    }
-    this.cache.set(key, { expiresAt: Date.now() + CACHE_TTL, value });
-  }
-
-  private static pathFromUrl(path: string) {
-    return path.split('/').map(encodeURIComponent).join('/');
-  }
-
-  private static async fetchRaw<T>(path: string): Promise<T | null> {
-    const pending = this.pendingWrites.get(path);
-    if (pending !== undefined) {
-      if (pending === null) return null;
-      return JSON.parse(pending) as T;
-    }
-
-    const cacheKey = `raw:${path}`;
-    const cached = this.cacheGet<T>(cacheKey);
-    if (cached !== undefined) return cached;
-
-    const response = await fetch(`${this.rawBase()}/${this.pathFromUrl(path)}`, {
-      headers: { 'User-Agent': 'JAVTIFUL-Catalog/1.0', Accept: 'application/json' },
-    });
-
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`Telegram GitHub index read failed: HTTP ${response.status}`);
-
-    const value = await response.json() as T;
-    this.cacheSet(cacheKey, value);
-    return value;
-  }
-
-  private static async getContent(path: string): Promise<{ content: any; sha?: string } | null> {
-    const pending = this.pendingWrites.get(path);
-    if (pending !== undefined) {
-      return pending === null ? null : { content: JSON.parse(pending) };
-    }
-
-    const response = await fetch(`${this.apiBase()}/${this.pathFromUrl(path)}`, { headers: this.headers() });
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`Telegram GitHub index content read failed: HTTP ${response.status}`);
-
-    const json: any = await response.json();
-    const decoded = Buffer.from(String(json.content || '').replace(/\\n/g, ''), 'base64').toString('utf8');
-    return { content: JSON.parse(decoded), sha: json.sha };
-  }
-
-  /**
-   * Queue a JSON write. Writes are committed in batches using Git's tree/commit API.
-   * This turns dozens of Contents-API commits into one atomic commit.
-   */
-  private static queueJson(path: string, value: any) {
-    this.pendingWrites.set(path, JSON.stringify(value, null, 2));
-    this.cache.delete(`raw:${path}`);
-
-    if (this.pendingWrites.size >= BATCH_SIZE) {
-      void this.flush();
-      return;
-    }
-
-    if (!this.flushTimer) {
-      this.flushTimer = setTimeout(() => {
-        this.flushTimer = null;
-        void this.flush();
-      }, BATCH_DELAY_MS);
-    }
-  }
-
-  private static queueDelete(path: string) {
-    this.pendingWrites.set(path, null);
-    this.cache.delete(`raw:${path}`);
-    if (this.pendingWrites.size >= BATCH_SIZE) {
-      void this.flush();
-      return;
-    }
-    if (!this.flushTimer) {
-      this.flushTimer = setTimeout(() => {
-        this.flushTimer = null;
-        void this.flush();
-      }, BATCH_DELAY_MS);
-    }
-  }
-
-  static async flush(): Promise<void> {
-    if (this.flushPromise) return this.flushPromise;
-    if (this.pendingWrites.size === 0) return;
-
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
-    }
-
-    const batch = new Map(this.pendingWrites);
-    this.pendingWrites.clear();
-
-    this.flushPromise = this.commitBatch(batch).catch(error => {
-      // Put failed writes back so they can be retried instead of being lost.
-      for (const [path, content] of batch) {
-        if (!this.pendingWrites.has(path)) this.pendingWrites.set(path, content);
-      }
-      throw error;
-    }).finally(() => {
-      this.flushPromise = null;
-      if (this.pendingWrites.size > 0 && !this.flushTimer) {
-        this.flushTimer = setTimeout(() => {
-          this.flushTimer = null;
-          void this.flush();
-        }, 100);
-      }
-    });
-
-    return this.flushPromise;
-  }
-
-  private static async githubJson<T>(url: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(url, {
-      ...init,
-      headers: { ...this.headers(Boolean(init?.body)), ...(init?.headers || {}) },
-    });
-    const text = await response.text();
-    let data: any = null;
-    try { data = text ? JSON.parse(text) : null; } catch {}
-    if (!response.ok) {
-      throw new Error(`GitHub API HTTP ${response.status}: ${data?.message || text.slice(0, 300)}`);
-    }
-    return data as T;
-  }
-
-  private static async commitBatch(batch: Map<string, string | null>) {
-    if (batch.size === 0) return;
-    const paths = Array.from(batch.keys());
-
-    // Retry once if another writer advances main between reading and updating it.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const ref = await this.githubJson<any>(`${this.apiRoot()}/git/ref/heads/${encodeURIComponent(this.branch())}`);
-      const parentSha = ref.object.sha as string;
-      const commit = await this.githubJson<any>(`${this.apiRoot()}/git/commits/${parentSha}`);
-      const baseTree = commit.tree.sha as string;
-
-      const blobs = await Promise.all(paths.map(async path => {
-        const content = batch.get(path);
-        if (content === null) return { path, sha: null };
-        const blob = await this.githubJson<any>(`${this.apiRoot()}/git/blobs`, {
-          method: 'POST',
-          body: JSON.stringify({
-            content: Buffer.from(content, 'utf8').toString('base64'),
-            encoding: 'base64',
-          }),
-        });
-        return { path, sha: blob.sha };
-      }));
-
-      const tree = await this.githubJson<any>(`${this.apiRoot()}/git/trees`, {
-        method: 'POST',
-        body: JSON.stringify({
-          base_tree: baseTree,
-          tree: blobs.map(item => ({
-            path: item.path,
-            mode: '100644',
-            type: 'blob',
-            sha: item.sha,
-          })),
-        }),
-      });
-
-      const newCommit = await this.githubJson<any>(`${this.apiRoot()}/git/commits`, {
-        method: 'POST',
-        body: JSON.stringify({
-          message: `index: batch update (${batch.size} files)`,
-          tree: tree.sha,
-          parents: [parentSha],
-        }),
-      });
-
-      try {
-        await this.githubJson<any>(`${this.apiRoot()}/git/refs/heads/${encodeURIComponent(this.branch())}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ sha: newCommit.sha, force: false }),
-        });
-        console.log(`[telegram-db] committed ${batch.size} files in one GitHub commit`);
-        return;
-      } catch (error: any) {
-        if (attempt === 0 && /409/.test(String(error.message))) continue;
-        throw error;
-      }
-    }
+  static async init() {
+    await this.db().query('SELECT 1');
   }
 
   static async setMediaGroupCode(mediaGroupId: string, code: string) {
-    if (!mediaGroupId || !code) return;
-    this.queueJson(
-      this.mediaGroupPath(mediaGroupId),
-      { media_group_id: String(mediaGroupId), code: this.normalizeCode(code), updated_at: new Date().toISOString() },
+    await this.db().query(
+      'INSERT INTO telegram_media_groups (media_group_id, code) VALUES ($1, $2) ON CONFLICT (media_group_id) DO UPDATE SET code = EXCLUDED.code, updated_at = NOW()',
+      [String(mediaGroupId), this.normalizeCode(code)]
     );
   }
 
   static async getCodeByMediaGroup(mediaGroupId: string) {
-    if (!mediaGroupId) return undefined;
-    return (await this.fetchRaw<{ code?: string }>(this.mediaGroupPath(mediaGroupId)))?.code;
+    const r = await this.db().query(
+      'SELECT code FROM telegram_media_groups WHERE media_group_id = $1 LIMIT 1',
+      [String(mediaGroupId)]
+    );
+    return r.rows[0]?.code as string | undefined;
   }
 
   static async addPendingMediaGroup(mediaGroupId: string, item: TelegramGalleryItem & { channel_id: string }) {
-    const path = this.pendingGroupPath(mediaGroupId);
-    const current = await this.getContent(path);
-    const existing: PendingMediaGroup = current?.content || {
-      media_group_id: String(mediaGroupId),
-      channel_id: item.channel_id,
-      photos: [],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    if (!existing.photos.some(p => p.message_id === item.message_id || p.file_id === item.file_id)) {
-      existing.photos.push({
+    const current = await this.getPendingMediaGroup(mediaGroupId);
+    const photos = current?.photos || [];
+    if (!photos.some(p => p.message_id === item.message_id || p.file_id === item.file_id)) {
+      photos.push({
         message_id: item.message_id,
         file_id: item.file_id,
         file_unique_id: item.file_unique_id,
@@ -331,123 +83,175 @@ export class TelegramDb {
       });
     }
 
-    existing.updated_at = new Date().toISOString();
-    this.queueJson(path, existing);
+    await this.db().query(
+      `INSERT INTO telegram_pending_groups (media_group_id, channel_id, photos)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (media_group_id)
+       DO UPDATE SET photos = EXCLUDED.photos, updated_at = NOW()`,
+      [String(mediaGroupId), item.channel_id, JSON.stringify(photos)]
+    );
   }
 
   static async getPendingMediaGroup(mediaGroupId: string) {
-    if (!mediaGroupId) return null;
-    return this.fetchRaw<PendingMediaGroup>(this.pendingGroupPath(mediaGroupId));
+    const r = await this.db().query(
+      'SELECT media_group_id, channel_id, photos, created_at, updated_at FROM telegram_pending_groups WHERE media_group_id = $1 LIMIT 1',
+      [String(mediaGroupId)]
+    );
+    if (!r.rows[0]) return null;
+    const row: any = r.rows[0];
+    return {
+      media_group_id: String(row.media_group_id),
+      channel_id: String(row.channel_id),
+      photos: Array.isArray(row.photos) ? row.photos : [],
+      created_at: new Date(row.created_at).toISOString(),
+      updated_at: new Date(row.updated_at).toISOString(),
+    } as PendingMediaGroup;
   }
 
   static async clearPendingMediaGroup(mediaGroupId: string) {
-    this.queueDelete(this.pendingGroupPath(mediaGroupId));
+    await this.db().query(
+      'DELETE FROM telegram_pending_groups WHERE media_group_id = $1',
+      [String(mediaGroupId)]
+    );
   }
 
   static async hasMessage(channelId: string, messageId: number) {
-    const key = `${channelId}:${messageId}`;
-    const entries = await this.fetchRaw<string[]>(this.messageShard(key));
-    return Array.isArray(entries) && entries.includes(key);
+    const r = await this.db().query(
+      'SELECT 1 FROM telegram_messages WHERE channel_id = $1 AND message_id = $2 LIMIT 1',
+      [channelId, messageId]
+    );
+    return r.rowCount > 0;
   }
 
   private static async recordMessage(channelId: string, messageId: number) {
-    if (!channelId || !messageId) return;
-    const key = `${channelId}:${messageId}`;
-    const path = this.messageShard(key);
-    const current = await this.getContent(path);
-    const entries = Array.isArray(current?.content) ? current.content.map(String) : [];
-
-    if (!entries.includes(key)) {
-      entries.push(key);
-      this.queueJson(path, entries);
-    }
+    await this.db().query(
+      'INSERT INTO telegram_messages (channel_id, message_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [channelId, messageId]
+    );
   }
 
   static async saveVideo(record: TelegramVideoIndexRecord) {
     const code = this.normalizeCode(record.code);
     const existing = await this.getVideo(code);
+    const gallery = new Map<string, TelegramGalleryItem>();
+    for (const item of existing?.telegram.gallery || []) gallery.set(item.file_id, item);
+    for (const item of record.telegram.gallery || []) gallery.set(item.file_id, item);
 
-    if (existing) {
-      const gallery = new Map<string, TelegramGalleryItem>();
-      for (const item of existing.telegram.gallery || []) gallery.set(item.file_id, item);
-      for (const item of record.telegram.gallery || []) gallery.set(item.file_id, item);
-      record.telegram.gallery = Array.from(gallery.values());
-      record.indexed_at = existing.indexed_at;
-      record.updated_at = new Date().toISOString();
+    const indexedAt = existing?.indexed_at || record.indexed_at;
+
+    await this.db().query(
+      `INSERT INTO telegram_videos
+       (code, channel_id, message_id, video_file_id, file_unique_id, duration, width, height, file_size, mime_type, media_group_id, indexed_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+       ON CONFLICT (code) DO UPDATE SET
+       channel_id=EXCLUDED.channel_id, message_id=EXCLUDED.message_id, video_file_id=EXCLUDED.video_file_id,
+       file_unique_id=EXCLUDED.file_unique_id, duration=EXCLUDED.duration, width=EXCLUDED.width,
+       height=EXCLUDED.height, file_size=EXCLUDED.file_size, mime_type=EXCLUDED.mime_type,
+       media_group_id=EXCLUDED.media_group_id, updated_at=NOW()`,
+      [
+        code, record.telegram.channel_id, record.telegram.message_id,
+        record.telegram.video_file_id || null, record.telegram.file_unique_id || null,
+        record.telegram.duration ?? null, record.telegram.width ?? null, record.telegram.height ?? null,
+        record.telegram.file_size ?? null, record.telegram.mime_type || 'video/mp4',
+        record.telegram.media_group_id || null, indexedAt
+      ]
+    );
+
+    for (const item of gallery.values()) {
+      await this.db().query(
+        `INSERT INTO telegram_gallery (code, message_id, file_id, file_unique_id, width, height)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (code,message_id) DO UPDATE SET file_id=EXCLUDED.file_id,
+         file_unique_id=EXCLUDED.file_unique_id, width=EXCLUDED.width, height=EXCLUDED.height`,
+        [code, item.message_id, item.file_id, item.file_unique_id || null, item.width ?? null, item.height ?? null]
+      );
+      await this.recordMessage(record.telegram.channel_id, item.message_id);
     }
 
-    const clean: TelegramVideoIndexRecord = {
-      code,
-      telegram: record.telegram,
-      indexed_at: record.indexed_at,
-      ...(record.updated_at ? { updated_at: record.updated_at } : {}),
-    };
+    await this.recordMessage(record.telegram.channel_id, record.telegram.message_id);
 
-    this.queueJson(this.videoPath(code), clean);
-
-    await this.recordMessage(clean.telegram.channel_id, clean.telegram.message_id);
-    for (const item of clean.telegram.gallery || []) {
-      await this.recordMessage(clean.telegram.channel_id, item.message_id);
-    }
-
-    await this.updateRecent(clean);
+    await this.db().query(
+      'INSERT INTO telegram_recent (code, indexed_at) VALUES ($1,$2) ON CONFLICT (code) DO UPDATE SET indexed_at=EXCLUDED.indexed_at',
+      [code, indexedAt]
+    );
   }
 
   static async addGalleryPhoto(code: string, photo: TelegramGalleryItem, channelId: string): Promise<TelegramVideoIndexRecord> {
-    const existing = await this.getVideo(code);
-
-    if (existing) {
-      existing.telegram.gallery = existing.telegram.gallery || [];
-      if (!existing.telegram.gallery.some(p => p.message_id === photo.message_id || p.file_id === photo.file_id)) {
-        existing.telegram.gallery.push(photo);
-      }
-      existing.updated_at = new Date().toISOString();
-      await this.saveVideo(existing);
-      return existing;
+    const normalized = this.normalizeCode(code);
+    const existing = await this.getVideo(normalized);
+    if (!existing) {
+      return {
+        code: normalized,
+        telegram: { channel_id: channelId, message_id: 0, gallery: [photo] },
+        indexed_at: new Date().toISOString(),
+      };
     }
 
-    // Do not create an incomplete video record for a photo arriving before its video.
-    // The indexer should keep such photos in pending-groups until the video/code arrives.
-    const pending: TelegramVideoIndexRecord = {
-      code: this.normalizeCode(code),
-      telegram: { channel_id: channelId, message_id: 0, gallery: [photo] },
-      indexed_at: new Date().toISOString(),
-    };
-    return pending;
+    await this.db().query(
+      `INSERT INTO telegram_gallery (code, message_id, file_id, file_unique_id, width, height)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (code,message_id) DO UPDATE SET file_id=EXCLUDED.file_id,
+       file_unique_id=EXCLUDED.file_unique_id, width=EXCLUDED.width, height=EXCLUDED.height`,
+      [normalized, photo.message_id, photo.file_id, photo.file_unique_id || null, photo.width ?? null, photo.height ?? null]
+    );
+    await this.recordMessage(channelId, photo.message_id);
+    return (await this.getVideo(normalized)) || existing;
   }
 
   static async getVideo(code: string) {
-    return this.fetchRaw<TelegramVideoIndexRecord>(this.videoPath(code));
+    const normalized = this.normalizeCode(code);
+    const r = await this.db().query(
+      'SELECT code,channel_id,message_id,video_file_id,file_unique_id,duration,width,height,file_size,mime_type,media_group_id,indexed_at,updated_at FROM telegram_videos WHERE code=$1 LIMIT 1',
+      [normalized]
+    );
+    if (!r.rows[0]) return null;
+
+    const g = await this.db().query(
+      'SELECT message_id,file_id,file_unique_id,width,height FROM telegram_gallery WHERE code=$1 ORDER BY id ASC',
+      [normalized]
+    );
+    const row: any = r.rows[0];
+
+    return {
+      code: String(row.code),
+      telegram: {
+        channel_id: String(row.channel_id),
+        message_id: Number(row.message_id),
+        video_file_id: row.video_file_id || undefined,
+        file_unique_id: row.file_unique_id || undefined,
+        duration: row.duration == null ? undefined : Number(row.duration),
+        width: row.width == null ? undefined : Number(row.width),
+        height: row.height == null ? undefined : Number(row.height),
+        file_size: row.file_size == null ? undefined : Number(row.file_size),
+        mime_type: row.mime_type || undefined,
+        media_group_id: row.media_group_id || undefined,
+        gallery: g.rows.map((x: any) => ({
+          message_id: Number(x.message_id),
+          file_id: String(x.file_id),
+          file_unique_id: x.file_unique_id || undefined,
+          width: x.width == null ? undefined : Number(x.width),
+          height: x.height == null ? undefined : Number(x.height),
+        })),
+      },
+      indexed_at: new Date(row.indexed_at).toISOString(),
+      updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
+    } as TelegramVideoIndexRecord;
   }
 
   static async getRecentCodes(limit = 24) {
-    const recent = await this.fetchRaw<Array<{ code: string; indexed_at: string }>>('catalog/recent.json');
-    return Array.isArray(recent)
-      ? recent.slice(0, Math.min(Math.max(limit, 1), 100)).map(x => x.code)
-      : [];
-  }
-
-  private static async updateRecent(record: TelegramVideoIndexRecord) {
-    const path = 'catalog/recent.json';
-    const current = await this.getContent(path);
-    const entries = Array.isArray(current?.content) ? current.content : [];
-    const filtered = entries.filter((x: any) => x?.code !== record.code);
-    filtered.unshift({ code: record.code, indexed_at: record.indexed_at });
-    this.queueJson(path, filtered.slice(0, 500));
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const r = await this.db().query(
+      'SELECT code FROM telegram_recent ORDER BY indexed_at DESC LIMIT $1',
+      [safeLimit]
+    );
+    return r.rows.map((x: any) => String(x.code));
   }
 
   static async getCount(): Promise<number | null> {
-    const stats = await this.fetchRaw<{ total?: number }>('catalog/stats.json');
-    return typeof stats?.total === 'number' ? stats.total : null;
+    const r = await this.db().query('SELECT COUNT(*)::bigint AS total FROM telegram_videos');
+    return r.rows[0]?.total == null ? null : Number(r.rows[0].total);
   }
 
-  static clearCache() { this.cache.clear(); }
-
-  static async shutdown(): Promise<void> {
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
-    }
-    await this.flush();
-  }
+  static clearCache() {}
+  static async shutdown() { await this.pool?.end(); this.pool = null; }
 }
