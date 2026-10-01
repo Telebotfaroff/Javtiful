@@ -99,12 +99,12 @@ export class TelegramBotService {
     return this.sendMessage(
       chatId,
       `👋 <b>Welcome to the JAVTIFUL Media Bot!</b>\n\n` +
-      `To request a video, send a valid JAV code (e.g. <code>016DHT-0881</code>) or click <b>GET VIDEO</b> on our web catalog.\n\n` +
+      `To request a valid JAV code (e.g. <code>016DHT-0881</code>) or click <b>GET VIDEO</b> on our web catalog.\n\n` +
       `Commands:\n` +
       `• /start - Welcome menu\n` +
       `• /help - Bot usage instructions\n` +
-      `• /status - System index status\\n` +
-      ` + `• /backup - Backup Neon index to private GitHub`
+      `• /status - System index status\n` +
+      `• /backup - Backup Neon index to private GitHub`
     );
   }
 
@@ -235,8 +235,8 @@ export class TelegramBotService {
       `• <b>Indexed Telegram Videos:</b> ${count ?? 'unknown'}\n` +
       `• <b>GitHub Cached Shards:</b> ${cacheStats.size}\n` +
       `• <b>Service Status:</b> Operational 🟢\n` +
-      `• <b>Storage:</b> Neon PostgreSQL (live)\\n` +
-      `• <b>Backup:</b> Private GitHub JSON snapshot\\n` +
+      `• <b>Storage:</b> Neon PostgreSQL (live)\n` +
+      `• <b>Backup:</b> Private GitHub JSON snapshot\n` +
       `• <b>Admin:</b> /backup`;
 
     return this.sendMessage(chatId, text);
