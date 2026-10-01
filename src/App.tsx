@@ -12,6 +12,7 @@ import { Pagination } from './components/Pagination.tsx';
 import { VideoDetailsPage } from './components/VideoDetailsPage.tsx';
 import { GalleryLightbox } from './components/GalleryLightbox.tsx';
 import { ActressesModal, StudiosModal, GenresModal } from './components/BrowseModals.tsx';
+import { DiagnosticsModal } from './components/DiagnosticsModal.tsx';
 import { Footer } from './components/Footer.tsx';
 import { VideoApiService } from './services/videoApi.ts';
 import type { VideoRecord, SortOption } from './types/video.ts';
@@ -27,6 +28,7 @@ export default function App() {
   const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
 
   // Metadata Lists from Backend API
   const [actressesList, setActressesList] = useState<{ name: string; count: number }[]>([]);
@@ -56,21 +58,25 @@ export default function App() {
     index: 0,
   });
 
-  const botUsername = 'JavtifulBot';
+  const [botUsername, setBotUsername] = useState('Javhdpro6_bot');
 
   // Load Metadata Lists (Actresses, Studios, Genres) and Featured Video on Mount
   useEffect(() => {
     async function loadInitialMetadata() {
       try {
-        const [actresses, studios, genres, latestRes] = await Promise.all([
+        const [actresses, studios, genres, latestRes, statusRes] = await Promise.all([
           VideoApiService.fetchActresses(),
           VideoApiService.fetchStudios(),
           VideoApiService.fetchGenres(),
           VideoApiService.fetchLatest(1),
+          fetch('/api/system/status').then(r => r.json()).catch(() => null),
         ]);
         setActressesList(actresses);
         setStudiosList(studios);
         setGenresList(genres);
+        if (statusRes?.telegram?.bot_info?.username) {
+          setBotUsername(statusRes.telegram.bot_info.username);
+        }
         if (latestRes.ok && latestRes.videos.length > 0) {
           setFeaturedVideo(latestRes.videos[0]);
         }
@@ -222,6 +228,7 @@ export default function App() {
         onOpenActressesList={() => setIsActressesOpen(true)}
         onOpenStudiosList={() => setIsStudiosOpen(true)}
         onOpenGenresList={() => setIsGenresOpen(true)}
+        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         botUsername={botUsername}
       />
 
@@ -344,7 +351,10 @@ export default function App() {
       </main>
 
       {/* English-Only Footer */}
-      <Footer botUsername={botUsername} />
+      <Footer
+        botUsername={botUsername}
+        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+      />
 
       {/* Screenshot & Cover Fullscreen Lightbox */}
       <GalleryLightbox
@@ -388,6 +398,12 @@ export default function App() {
           setSelectedVideo(null);
           setCurrentPage(1);
         }}
+      />
+
+      {/* System Status & Diagnostics Modal */}
+      <DiagnosticsModal
+        isOpen={isDiagnosticsOpen}
+        onClose={() => setIsDiagnosticsOpen(false)}
       />
     </div>
   );

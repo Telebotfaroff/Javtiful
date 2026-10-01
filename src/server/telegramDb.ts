@@ -52,7 +52,61 @@ export class TelegramDb {
   }
 
   static async init() {
-    await this.db().query('SELECT 1');
+    await this.db().query(`
+      CREATE TABLE IF NOT EXISTS telegram_media_groups (
+        media_group_id TEXT PRIMARY KEY,
+        code TEXT NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS telegram_pending_groups (
+        media_group_id TEXT PRIMARY KEY,
+        channel_id TEXT NOT NULL,
+        photos JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS telegram_messages (
+        channel_id TEXT NOT NULL,
+        message_id BIGINT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (channel_id, message_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS telegram_videos (
+        code TEXT PRIMARY KEY,
+        channel_id TEXT NOT NULL,
+        message_id BIGINT NOT NULL,
+        video_file_id TEXT,
+        file_unique_id TEXT,
+        duration INT,
+        width INT,
+        height INT,
+        file_size BIGINT,
+        mime_type TEXT,
+        media_group_id TEXT,
+        indexed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS telegram_gallery (
+        id SERIAL PRIMARY KEY,
+        code TEXT NOT NULL,
+        message_id BIGINT NOT NULL,
+        file_id TEXT NOT NULL,
+        file_unique_id TEXT,
+        width INT,
+        height INT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        CONSTRAINT unique_code_msg UNIQUE (code, message_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS telegram_recent (
+        code TEXT PRIMARY KEY,
+        indexed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
   }
 
   static async setMediaGroupCode(mediaGroupId: string, code: string) {

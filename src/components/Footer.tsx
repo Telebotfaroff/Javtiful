@@ -3,9 +3,10 @@ import { Film, Send, ShieldAlert, Github } from 'lucide-react';
 
 interface FooterProps {
   botUsername?: string;
+  onOpenDiagnostics?: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ botUsername = 'JavtifulBot' }) => {
+export const Footer: React.FC<FooterProps> = ({ botUsername = 'JavtifulBot', onOpenDiagnostics }) => {
   return (
     <footer className="mt-20 border-t border-[#1f293d] bg-[#0b0f19] py-12 text-xs text-slate-400">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
@@ -25,8 +26,16 @@ export const Footer: React.FC<FooterProps> = ({ botUsername = 'JavtifulBot' }) =
             </p>
           </div>
 
-          {/* Telegram bot button */}
+          {/* Telegram bot button & Diagnostics */}
           <div className="flex items-center gap-3">
+            {onOpenDiagnostics && (
+              <button
+                onClick={onOpenDiagnostics}
+                className="flex items-center gap-2 rounded-xl bg-gray-800/80 border border-gray-700/80 px-3.5 py-2.5 text-xs font-semibold text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
+              >
+                <span>System Status</span>
+              </button>
+            )}
             <a
               href={`https://t.me/${botUsername}`}
               target="_blank"
@@ -55,7 +64,14 @@ export const Footer: React.FC<FooterProps> = ({ botUsername = 'JavtifulBot' }) =
             <span aria-hidden="true">·</span>
             <span>Metadata: javtiful-scraper</span>
             <span aria-hidden="true">·</span>
-            <span>Delivery: Telegram Deep Link</span>
+            {onOpenDiagnostics && (
+              <button
+                onClick={onOpenDiagnostics}
+                className="hover:text-gray-300 transition-colors underline underline-offset-2"
+              >
+                System Status & Webhook
+              </button>
+            )}
           </div>
         </div>
       </div>

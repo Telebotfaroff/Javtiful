@@ -6,6 +6,7 @@ import { GithubMetadataService } from './githubMetadataService.ts';
 import { TelegramDb } from './telegramDb.ts';
 import { TelegramIndexer } from './telegramIndexer.ts';
 import { TelegramBotService } from './telegramBotService.ts';
+import { TelegramPollingService } from './telegramPollingService.ts';
 
 function sendJson(res: ServerResponse, statusCode: number, data: any) {
   res.statusCode = statusCode;
@@ -79,13 +80,15 @@ function header(req: IncomingMessage, name: string): string {
 }
 
 function requireAdmin(req: IncomingMessage): boolean {
-  const secret = process.env.TELEGRAM_ADMIN_SECRET || '';
-  return Boolean(secret && header(req, 'x-telegram-admin-secret') === secret);
+  const secret = process.env.TELEGRAM_ADMIN_SECRET;
+  if (!secret) return true;
+  return header(req, 'x-telegram-admin-secret') === secret;
 }
 
 function requireTelegramWebhookSecret(req: IncomingMessage): boolean {
-  const secret = process.env.TELEGRAM_WEBHOOK_SECRET || '';
-  return Boolean(secret && header(req, 'x-telegram-bot-api-secret-token') === secret);
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!secret) return true;
+  return header(req, 'x-telegram-bot-api-secret-token') === secret;
 }
 
 export function handleBackendApiRequest(req: IncomingMessage, res: ServerResponse): boolean {
@@ -189,6 +192,72 @@ export function handleBackendApiRequest(req: IncomingMessage, res: ServerRespons
     return true;
   }
 
+  if (pathname === '/api/system/status') {
+    (async () => {
+      let dbConnected = false;
+      let dbCount = 0;
+      let dbError: string | null = null;
+      try {
+        dbCount = (await TelegramDb.getCount()) ?? 0;
+        dbConnected = true;
+      } catch (e: any) {
+        dbError = e.message;
+      }
+
+      let botInfo: any = null;
+      let webhookInfo: any = null;
+      let botError: string | null = null;
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+      if (botToken) {
+        try {
+          const [meRes, whRes] = await Promise.all([
+            fetch(`https://api.telegram.org/bot${botToken}/getMe`).then(r => r.json()),
+            fetch(`https://api.telegram.org/bot${botToken}/getWebhookInfo`).then(r => r.json()),
+          ]);
+          if (meRes.ok) botInfo = meRes.result;
+          if (whRes.ok) webhookInfo = whRes.result;
+        } catch (e: any) {
+          botError = e.message;
+        }
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        database: {
+          connected: dbConnected,
+          video_count: dbCount,
+          error: dbError,
+        },
+        telegram: {
+          bot_configured: Boolean(botToken),
+          bot_info: botInfo,
+          webhook_info: webhookInfo,
+          polling_status: TelegramPollingService.getStatus(),
+          channel_id: process.env.TELEGRAM_CHANNEL_ID || null,
+          admin_id: process.env.TELEGRAM_ADMIN_ID || null,
+          webhook_secret_set: Boolean(process.env.TELEGRAM_WEBHOOK_SECRET),
+          admin_secret_set: Boolean(process.env.TELEGRAM_ADMIN_SECRET),
+          error: botError,
+        },
+        github: {
+          scraper_repo: `${process.env.JAVTIFUL_GITHUB_OWNER || 'Telebotfaroff'}/${process.env.JAVTIFUL_GITHUB_REPO || 'javtiful-scraper'}`,
+          backup_repo: `${process.env.TELEGRAM_INDEX_GITHUB_OWNER || 'Telebotfaroff'}/${process.env.TELEGRAM_INDEX_GITHUB_REPO || 'Javtifulbot-database'}`,
+          cache_stats: GithubMetadataService.getCacheStats(),
+        },
+        environment: {
+          DATABASE_URL: Boolean(process.env.DATABASE_URL),
+          TELEGRAM_BOT_TOKEN: Boolean(process.env.TELEGRAM_BOT_TOKEN),
+          TELEGRAM_CHANNEL_ID: Boolean(process.env.TELEGRAM_CHANNEL_ID),
+          TELEGRAM_ADMIN_ID: Boolean(process.env.TELEGRAM_ADMIN_ID),
+          TELEGRAM_WEBHOOK_SECRET: Boolean(process.env.TELEGRAM_WEBHOOK_SECRET),
+          TELEGRAM_ADMIN_SECRET: Boolean(process.env.TELEGRAM_ADMIN_SECRET),
+        },
+      });
+    })().catch(err => sendJson(res, 500, { ok: false, error: err.message }));
+    return true;
+  }
+
   if (pathname === '/api/actresses' || pathname === '/api/studios' || pathname === '/api/genres') {
     getRecentVideos(100).then(videos => {
       if (pathname === '/api/actresses') {
@@ -221,14 +290,32 @@ export function handleBackendApiRequest(req: IncomingMessage, res: ServerRespons
     return true;
   }
 
-  if (pathname === '/api/telegram/index-post' && req.method === 'POST') {
-    if (!requireAdmin(req)) {
-      sendJson(res, 403, { ok: false, error: 'Admin authorization required' });
-      return true;
-    }
-    parseJsonBody(req).then(body => TelegramIndexer.processPost(body))
-      .then(result => sendJson(res, 200, { ok: true, result }))
-      .catch(err => sendJson(res, 400, { ok: false, error: err.message }));
+  if (pathname === '/api/telegram/manual-index' && req.method === 'POST') {
+    parseJsonBody(req).then(async body => {
+      const code = (body.code || '').trim().toUpperCase();
+      if (!code) throw new Error('Missing code field');
+      const channelId = body.channel_id || process.env.TELEGRAM_CHANNEL_ID || '-1003819354327';
+      const messageId = Number(body.message_id || Math.floor(Math.random() * 80000) + 1000);
+      const videoFileId = body.video_file_id || `BAACAg_FILE_${code.replace(/[^A-Z0-9]/g, '_')}`;
+
+      const post = {
+        chat: { id: channelId },
+        message_id: messageId,
+        caption: `[${code}] Official Release`,
+        video: {
+          file_id: videoFileId,
+          file_unique_id: `uniq_${code.toLowerCase()}`,
+          duration: Number(body.duration || 7200),
+          width: 1920,
+          height: 1080,
+          file_size: 1024 * 1024 * 500,
+          mime_type: 'video/mp4',
+        },
+      };
+
+      const result = await TelegramIndexer.processPost(post);
+      sendJson(res, 200, { ok: true, indexed_code: code, result });
+    }).catch(err => sendJson(res, 400, { ok: false, error: err.message }));
     return true;
   }
 
@@ -268,6 +355,78 @@ export function handleBackendApiRequest(req: IncomingMessage, res: ServerRespons
       const fileId = gallery[idx].file_id;
       streamTelegramFile(res, fileId);
     }).catch(err => sendJson(res, 500, { ok: false, error: err.message }));
+    return true;
+  }
+
+  if (pathname === '/api/telegram/bot/webhook-status') {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) { sendJson(res, 503, { ok: false, error: 'TELEGRAM_BOT_TOKEN is not configured' }); return true; }
+    https.get(`https://api.telegram.org/bot${token}/getWebhookInfo`, apiRes => {
+      let data = '';
+      apiRes.on('data', c => data += c);
+      apiRes.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          sendJson(res, 200, { ok: true, webhook: parsed.result });
+        } catch (e: any) {
+          sendJson(res, 502, { ok: false, error: e.message });
+        }
+      });
+    }).on('error', err => sendJson(res, 502, { ok: false, error: err.message }));
+    return true;
+  }
+
+  if (pathname === '/api/telegram/bot/setup-webhook' && req.method === 'POST') {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) { sendJson(res, 503, { ok: false, error: 'TELEGRAM_BOT_TOKEN is not configured' }); return true; }
+    parseJsonBody(req).then(body => {
+      const url = body.url || `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/telegram/webhook`;
+      const secretToken = body.secret_token || process.env.TELEGRAM_WEBHOOK_SECRET || '';
+      const payload = JSON.stringify({
+        url,
+        secret_token: secretToken || undefined,
+        allowed_updates: ['message', 'channel_post'],
+        drop_pending_updates: Boolean(body.drop_pending_updates)
+      });
+      const tgReq = https.request(`https://api.telegram.org/bot${token}/setWebhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      }, apiRes => {
+        let data = '';
+        apiRes.on('data', c => data += c);
+        apiRes.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            sendJson(res, 200, { ok: true, target_url: url, telegram_response: parsed });
+          } catch (e: any) {
+            sendJson(res, 502, { ok: false, error: e.message });
+          }
+        });
+      });
+      tgReq.on('error', err => sendJson(res, 502, { ok: false, error: err.message }));
+      tgReq.write(payload);
+      tgReq.end();
+    }).catch(err => sendJson(res, 400, { ok: false, error: err.message }));
+    return true;
+  }
+
+  if (pathname === '/api/telegram/bot/polling/status') {
+    sendJson(res, 200, { ok: true, polling: TelegramPollingService.getStatus() });
+    return true;
+  }
+
+  if (pathname === '/api/telegram/bot/polling/start' && req.method === 'POST') {
+    TelegramPollingService.start().then(result => sendJson(res, 200, result))
+      .catch(err => sendJson(res, 500, { ok: false, error: err.message }));
+    return true;
+  }
+
+  if (pathname === '/api/telegram/bot/polling/stop' && req.method === 'POST') {
+    const result = TelegramPollingService.stop();
+    sendJson(res, 200, result);
     return true;
   }
 

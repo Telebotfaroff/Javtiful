@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Film, Users, Building2, Tag, Menu, X, Send, Sparkles } from 'lucide-react';
+import { Search, Film, Users, Building2, Tag, Menu, X, Send, Sparkles, Activity } from 'lucide-react';
 
 interface NavbarProps {
   searchQuery: string;
@@ -11,6 +11,7 @@ interface NavbarProps {
   onOpenActressesList: () => void;
   onOpenStudiosList: () => void;
   onOpenGenresList: () => void;
+  onOpenDiagnostics?: () => void;
   botUsername?: string;
 }
 
@@ -21,6 +22,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenActressesList,
   onOpenStudiosList,
   onOpenGenresList,
+  onOpenDiagnostics,
   botUsername = 'JavtifulBot',
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -117,8 +119,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </nav>
 
-        {/* Telegram Delivery Bot Pill & Mobile Button */}
+        {/* Telegram Delivery Bot Pill, Status & Mobile Button */}
         <div className="flex items-center gap-2.5">
+          {onOpenDiagnostics && (
+            <button
+              onClick={onOpenDiagnostics}
+              title="View Neon DB & Telegram Webhook Status"
+              className="flex items-center gap-1.5 rounded-lg bg-gray-800/80 border border-gray-700/80 px-2.5 py-1.5 text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
+            >
+              <Activity className="h-3.5 w-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">System Status</span>
+            </button>
+          )}
+
           <a
             href={`https://t.me/${botUsername}`}
             target="_blank"
