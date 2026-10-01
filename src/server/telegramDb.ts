@@ -1,5 +1,4 @@
-import fs from 'fs';
-import path from 'path';
+import crypto from 'crypto';
 
 export interface TelegramGalleryItem {
   message_id: number;
@@ -26,299 +25,220 @@ export interface TelegramMediaRecord {
 export interface TelegramVideoIndexRecord {
   code: string;
   telegram: TelegramMediaRecord;
-  metadataFound: boolean;
   indexed_at: string;
   updated_at?: string;
 }
 
+interface CacheEntry { expiresAt: number; value: unknown; }
+
+const CACHE_TTL = 60_000;
+const MAX_CACHE = 200;
+
 export class TelegramDb {
-  private static readonly DB_DIR = path.resolve(process.cwd(), 'telegram-db');
-  private static readonly VIDEOS_DIR = path.resolve(process.cwd(), 'telegram-db', 'videos');
-  private static readonly MEDIA_GROUPS_FILE = path.resolve(process.cwd(), 'telegram-db', 'media_groups.json');
-  private static readonly MESSAGES_FILE = path.resolve(process.cwd(), 'telegram-db', 'messages.json');
+  private static cache = new Map<string, CacheEntry>();
+  static async init(): Promise<void> {}
 
-  private static initialized = false;
+  private static owner() { return process.env.TELEGRAM_INDEX_GITHUB_OWNER || 'Telebotfaroff'; }
+  private static repo() { return process.env.TELEGRAM_INDEX_GITHUB_REPO || 'javtiful-telegram-index'; }
+  private static branch() { return process.env.TELEGRAM_INDEX_GITHUB_BRANCH || 'main'; }
+  private static token() { return process.env.TELEGRAM_INDEX_GITHUB_TOKEN || process.env.GITHUB_TOKEN || ''; }
+  private static apiBase() { return `https://api.github.com/repos/${this.owner()}/${this.repo()}/contents`; }
+  private static rawBase() { return `https://raw.githubusercontent.com/${this.owner()}/${this.repo()}/${encodeURIComponent(this.branch())}`; }
 
-  // Persistent in-memory cache for media_group_id -> code
-  private static mediaGroupMap = new Map<string, string>();
+  private static normalizeCode(code: string) {
+    return code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  }
 
-  // Persistent in-memory index for processed messages (channel_id:message_id)
-  private static messageSet = new Set<string>();
+  private static videoPath(code: string) {
+    const safe = this.normalizeCode(code);
+    const match = safe.match(/^(.+)-([0-9]+)$/);
+    if (!match) throw new Error(`Invalid JAV code: ${code}`);
+    return `videos/${match[1]}/${match[2]}.json`;
+  }
 
-  /**
-   * Initialize directories and persistent mappings on boot
-   */
-  static async init(): Promise<void> {
-    if (this.initialized) return;
+  private static messageShard(key: string) {
+    return `messages/${crypto.createHash('sha256').update(key).digest('hex').slice(0, 2)}.json`;
+  }
 
-    try {
-      await fs.promises.mkdir(this.VIDEOS_DIR, { recursive: true });
+  private static mediaGroupPath(id: string) {
+    return `media-groups/${encodeURIComponent(String(id))}.json`;
+  }
 
-      // 1. Load persistent media group associations
-      try {
-        const mgRaw = await fs.promises.readFile(this.MEDIA_GROUPS_FILE, 'utf-8');
-        const parsed = JSON.parse(mgRaw);
-        if (parsed && typeof parsed === 'object') {
-          for (const [k, v] of Object.entries(parsed)) {
-            this.mediaGroupMap.set(k, String(v));
-          }
-        }
-      } catch {
-        // media_groups.json does not exist yet
-      }
+  private static cacheGet<T>(key: string): T | undefined {
+    const item = this.cache.get(key);
+    if (!item) return undefined;
+    if (item.expiresAt < Date.now()) { this.cache.delete(key); return undefined; }
+    return item.value as T;
+  }
 
-      // 2. Load persistent processed messages index
-      try {
-        const msgRaw = await fs.promises.readFile(this.MESSAGES_FILE, 'utf-8');
-        const parsed = JSON.parse(msgRaw);
-        if (Array.isArray(parsed)) {
-          for (const item of parsed) {
-            this.messageSet.add(String(item));
-          }
-        }
-      } catch {
-        // Build initial messages set from existing video files on disk (only once on fresh index)
-        try {
-          const files = await fs.promises.readdir(this.VIDEOS_DIR);
-          for (const file of files.filter((f) => f.endsWith('.json') && !f.includes('.tmp.'))) {
-            try {
-              const content = await fs.promises.readFile(path.join(this.VIDEOS_DIR, file), 'utf-8');
-              const rec = JSON.parse(content);
-              if (rec?.telegram?.channel_id && rec?.telegram?.message_id) {
-                this.messageSet.add(`${rec.telegram.channel_id}:${rec.telegram.message_id}`);
-              }
-              if (rec?.telegram?.gallery && Array.isArray(rec.telegram.gallery)) {
-                for (const g of rec.telegram.gallery) {
-                  if (g.message_id && rec.telegram.channel_id) {
-                    this.messageSet.add(`${rec.telegram.channel_id}:${g.message_id}`);
-                  }
-                }
-              }
-            } catch {}
-          }
-          if (this.messageSet.size > 0) {
-            await this.atomicWriteJson(this.MESSAGES_FILE, Array.from(this.messageSet));
-          }
-        } catch {}
-      }
+  private static cacheSet(key: string, value: unknown) {
+    if (this.cache.size >= MAX_CACHE) {
+      const first = this.cache.keys().next().value;
+      if (first) this.cache.delete(first);
+    }
+    this.cache.set(key, { expiresAt: Date.now() + CACHE_TTL, value });
+  }
 
-      this.initialized = true;
-    } catch (e: any) {
-      console.error('Failed to initialize telegram-db:', e.message);
+  private static async fetchRaw<T>(path: string): Promise<T | null> {
+    const cacheKey = `raw:${path}`;
+    const cached = this.cacheGet<T>(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const url = `${this.rawBase()}/${path.split('/').map(encodeURIComponent).join('/')}`;
+    const response = await fetch(url, { headers: { 'User-Agent': 'JAVTIFUL-Catalog/1.0', Accept: 'application/json' } });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Telegram GitHub index read failed: HTTP ${response.status}`);
+    const value = await response.json() as T;
+    this.cacheSet(cacheKey, value);
+    return value;
+  }
+
+  private static async getContent(path: string): Promise<{ content: any; sha?: string } | null> {
+    const token = this.token();
+    if (!token) throw new Error('TELEGRAM_INDEX_GITHUB_TOKEN or GITHUB_TOKEN is required for index writes');
+
+    const response = await fetch(`${this.apiBase()}/${path.split('/').map(encodeURIComponent).join('/')}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'JAVTIFUL-Catalog/1.0',
+      },
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Telegram GitHub index content read failed: HTTP ${response.status}`);
+    const json: any = await response.json();
+    const decoded = Buffer.from(String(json.content || '').replace(/\\n/g, ''), 'base64').toString('utf8');
+    return { content: JSON.parse(decoded), sha: json.sha };
+  }
+
+  private static async putJson(path: string, value: any, message: string): Promise<void> {
+    const token = this.token();
+    if (!token) throw new Error('TELEGRAM_INDEX_GITHUB_TOKEN or GITHUB_TOKEN is required for index writes');
+
+    const bodyBase: any = {
+      message,
+      content: Buffer.from(JSON.stringify(value, null, 2), 'utf8').toString('base64'),
+      branch: this.branch(),
+    };
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const current = await this.getContent(path);
+      const body = current?.sha ? { ...bodyBase, sha: current.sha } : bodyBase;
+      const response = await fetch(`${this.apiBase()}/${path.split('/').map(encodeURIComponent).join('/')}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'JAVTIFUL-Catalog/1.0',
+        },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) { this.cache.delete(`raw:${path}`); return; }
+      if (response.status === 409 && attempt === 0) continue;
+      throw new Error(`Telegram GitHub index write failed: HTTP ${response.status} ${(await response.text()).slice(0, 300)}`);
     }
   }
 
-  /**
-   * Persistently record media_group_id -> JAV code association (Section 8 & Requirement 7)
-   */
-  static async setMediaGroupCode(mediaGroupId: string, code: string): Promise<void> {
+  static async setMediaGroupCode(mediaGroupId: string, code: string) {
     if (!mediaGroupId || !code) return;
-    await this.init();
-
-    const normalizedCode = code.toUpperCase();
-    this.mediaGroupMap.set(String(mediaGroupId), normalizedCode);
-
-    try {
-      const obj: Record<string, string> = {};
-      for (const [k, v] of this.mediaGroupMap.entries()) {
-        obj[k] = v;
-      }
-      await this.atomicWriteJson(this.MEDIA_GROUPS_FILE, obj);
-    } catch (e: any) {
-      console.warn('Failed to persist media_groups.json:', e.message);
-    }
+    await this.putJson(this.mediaGroupPath(mediaGroupId), {
+      media_group_id: String(mediaGroupId), code: this.normalizeCode(code), updated_at: new Date().toISOString()
+    }, `index: map media group ${mediaGroupId}`);
   }
 
-  /**
-   * Retrieve JAV code registered for a media_group_id
-   */
-  static getCodeByMediaGroup(mediaGroupId: string): string | undefined {
+  static async getCodeByMediaGroup(mediaGroupId: string) {
     if (!mediaGroupId) return undefined;
-    return this.mediaGroupMap.get(String(mediaGroupId));
+    return (await this.fetchRaw<{ code?: string }>(this.mediaGroupPath(mediaGroupId)))?.code;
   }
 
-  /**
-   * Record processed message in index and persist
-   */
-  private static async recordMessage(channelId: string, messageId: number): Promise<void> {
+  static async hasMessage(channelId: string, messageId: number) {
+    const key = `${channelId}:${messageId}`;
+    const entries = await this.fetchRaw<string[]>(this.messageShard(key));
+    return Array.isArray(entries) && entries.includes(key);
+  }
+
+  private static async recordMessage(channelId: string, messageId: number) {
     if (!channelId || !messageId) return;
     const key = `${channelId}:${messageId}`;
-    if (!this.messageSet.has(key)) {
-      this.messageSet.add(key);
-      try {
-        await this.atomicWriteJson(this.MESSAGES_FILE, Array.from(this.messageSet));
-      } catch (e: any) {
-        console.warn('Failed to persist messages.json index:', e.message);
-      }
+    const path = this.messageShard(key);
+    const current = await this.getContent(path);
+    const entries = Array.isArray(current?.content) ? current.content.map(String) : [];
+    if (!entries.includes(key)) {
+      entries.push(key);
+      await this.putJson(path, entries, `index: message ${key}`);
     }
   }
 
-  /**
-   * O(1) message existence check without reading every file on disk (Requirement 8)
-   */
-  static async hasMessage(channelId: string, messageId: number): Promise<boolean> {
-    await this.init();
-    const key = `${channelId}:${messageId}`;
-    return this.messageSet.has(key);
-  }
-
-  /**
-   * Sanitized file path for video code
-   */
-  private static getFilePath(code: string): string {
-    const safeCode = code.toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
-    return path.join(this.VIDEOS_DIR, `${safeCode}.json`);
-  }
-
-  /**
-   * Atomic file writer using staging temporary file + atomic rename
-   */
-  private static async atomicWriteJson(filePath: string, data: any): Promise<void> {
-    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 7)}`;
-    const json = JSON.stringify(data, null, 2);
-    try {
-      await fs.promises.writeFile(tempPath, json, 'utf-8');
-      await fs.promises.rename(tempPath, filePath);
-    } catch {
-      await fs.promises.writeFile(filePath, json, 'utf-8');
-      try {
-        await fs.promises.unlink(tempPath);
-      } catch {}
-    }
-  }
-
-  /**
-   * Save or update video record in telegram-db/videos/<CODE>.json
-   * Note: Stores only Telegram index/media information (Requirement 3 & 4)
-   */
-  static async saveVideo(record: TelegramVideoIndexRecord): Promise<void> {
-    await this.init();
-    const filePath = this.getFilePath(record.code);
-
-    // If existing, preserve or merge gallery items
-    try {
-      const existing = await this.getVideo(record.code);
-      if (existing) {
-        const existingGallery = existing.telegram.gallery || [];
-        const incomingGallery = record.telegram.gallery || [];
-        const galleryMap = new Map<string, any>();
-
-        for (const item of [...existingGallery, ...incomingGallery]) {
-          galleryMap.set(item.file_id, item);
-        }
-
-        record.telegram.gallery = Array.from(galleryMap.values());
-        record.indexed_at = existing.indexed_at; // preserve original indexed timestamp
-        record.updated_at = new Date().toISOString();
-      }
-    } catch {}
-
-    // Atomic write to disk
-    await this.atomicWriteJson(filePath, record);
-
-    // Index message ID for O(1) duplicate checks
-    if (record.telegram.channel_id && record.telegram.message_id) {
-      await this.recordMessage(record.telegram.channel_id, record.telegram.message_id);
-    }
-  }
-
-  /**
-   * Append a gallery photo to an existing or draft video record
-   */
-  static async addGalleryPhoto(
-    code: string,
-    photo: TelegramGalleryItem,
-    channelId: string,
-    metadataFound = true
-  ): Promise<TelegramVideoIndexRecord> {
-    await this.init();
+  static async saveVideo(record: TelegramVideoIndexRecord) {
+    const code = this.normalizeCode(record.code);
     const existing = await this.getVideo(code);
 
     if (existing) {
-      existing.telegram.gallery = existing.telegram.gallery || [];
-      const alreadyPresent = existing.telegram.gallery.some(
-        (p) => p.message_id === photo.message_id || p.file_id === photo.file_id
-      );
-      if (!alreadyPresent) {
-        existing.telegram.gallery.push(photo);
-        existing.updated_at = new Date().toISOString();
-        await this.atomicWriteJson(this.getFilePath(code), existing);
-      }
+      const gallery = new Map<string, TelegramGalleryItem>();
+      for (const item of existing.telegram.gallery || []) gallery.set(item.file_id, item);
+      for (const item of record.telegram.gallery || []) gallery.set(item.file_id, item);
+      record.telegram.gallery = Array.from(gallery.values());
+      record.indexed_at = existing.indexed_at;
+      record.updated_at = new Date().toISOString();
+    }
 
-      if (channelId && photo.message_id) {
-        await this.recordMessage(channelId, photo.message_id);
+    const clean: TelegramVideoIndexRecord = {
+      code, telegram: record.telegram, indexed_at: record.indexed_at,
+      ...(record.updated_at ? { updated_at: record.updated_at } : {})
+    };
+
+    await this.putJson(this.videoPath(code), clean, `index: ${code}`);
+    await this.recordMessage(clean.telegram.channel_id, clean.telegram.message_id);
+    for (const item of clean.telegram.gallery || []) await this.recordMessage(clean.telegram.channel_id, item.message_id);
+    await this.updateRecent(clean);
+  }
+
+  static async addGalleryPhoto(code: string, photo: TelegramGalleryItem, channelId: string): Promise<TelegramVideoIndexRecord> {
+    const existing = await this.getVideo(code);
+    if (existing) {
+      existing.telegram.gallery = existing.telegram.gallery || [];
+      if (!existing.telegram.gallery.some(p => p.message_id === photo.message_id || p.file_id === photo.file_id)) {
+        existing.telegram.gallery.push(photo);
       }
+      existing.updated_at = new Date().toISOString();
+      await this.saveVideo(existing);
       return existing;
     }
 
-    // Create a draft record if photo arrives before video
     const draft: TelegramVideoIndexRecord = {
-      code,
-      telegram: {
-        channel_id: channelId,
-        message_id: 0,
-        gallery: [photo],
-      },
-      metadataFound,
-      indexed_at: new Date().toISOString(),
+      code: this.normalizeCode(code),
+      telegram: { channel_id: channelId, message_id: 0, gallery: [photo] },
+      indexed_at: new Date().toISOString()
     };
-    await this.atomicWriteJson(this.getFilePath(code), draft);
-
-    if (channelId && photo.message_id) {
-      await this.recordMessage(channelId, photo.message_id);
-    }
+    await this.saveVideo(draft);
     return draft;
   }
 
-  /**
-   * O(1) single video retrieval by code (Requirement 8)
-   */
-  static async getVideo(code: string): Promise<TelegramVideoIndexRecord | null> {
-    await this.init();
-    const filePath = this.getFilePath(code);
-    try {
-      const content = await fs.promises.readFile(filePath, 'utf-8');
-      return JSON.parse(content) as TelegramVideoIndexRecord;
-    } catch {
-      return null;
-    }
+  static async getVideo(code: string) {
+    return this.fetchRaw<TelegramVideoIndexRecord>(this.videoPath(code));
   }
 
-  /**
-   * List all indexed records in telegram-db/videos (skips corrupt files and temp files)
-   */
-  static async getAllVideos(): Promise<TelegramVideoIndexRecord[]> {
-    await this.init();
-    try {
-      const files = await fs.promises.readdir(this.VIDEOS_DIR);
-      const jsonFiles = files.filter((f) => f.endsWith('.json') && !f.includes('.tmp.'));
-
-      const records: TelegramVideoIndexRecord[] = [];
-      for (const file of jsonFiles) {
-        try {
-          const content = await fs.promises.readFile(path.join(this.VIDEOS_DIR, file), 'utf-8');
-          if (!content.trim()) continue;
-          const parsed = JSON.parse(content);
-          if (parsed && parsed.code) {
-            records.push(parsed);
-          }
-        } catch (e: any) {
-          console.warn(`Skipping unparseable or corrupt JSON record ${file}:`, e.message);
-        }
-      }
-
-      // Sort by indexed_at descending
-      return records.sort((a, b) => (b.indexed_at || '').localeCompare(a.indexed_at || ''));
-    } catch {
-      return [];
-    }
+  static async getRecentCodes(limit = 24) {
+    const recent = await this.fetchRaw<Array<{ code: string; indexed_at: string }>>('catalog/recent.json');
+    return Array.isArray(recent) ? recent.slice(0, Math.min(Math.max(limit, 1), 100)).map(x => x.code) : [];
   }
 
-  /**
-   * Total number of indexed videos
-   */
-  static async getCount(): Promise<number> {
-    const all = await this.getAllVideos();
-    return all.length;
+  private static async updateRecent(record: TelegramVideoIndexRecord) {
+    const path = 'catalog/recent.json';
+    const current = await this.getContent(path);
+    const entries = Array.isArray(current?.content) ? current.content : [];
+    const filtered = entries.filter((x: any) => x?.code !== record.code);
+    filtered.unshift({ code: record.code, indexed_at: record.indexed_at });
+    await this.putJson(path, filtered.slice(0, 500), `index: recent ${record.code}`);
   }
+
+  static async getCount(): Promise<number | null> {
+    const stats = await this.fetchRaw<{ total?: number }>('catalog/stats.json');
+    return typeof stats?.total === 'number' ? stats.total : null;
+  }
+
+  static clearCache() { this.cache.clear(); }
 }
