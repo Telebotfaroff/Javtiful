@@ -48,3 +48,19 @@ The application never clones this repository and never loads the full database i
 ## Required GitHub token
 
 Use a fine-grained GitHub token with repository Contents read/write access to the Telegram index repository only. Do not put the token in VITE variables or frontend code.
+
+
+## Write batching
+
+Telegram indexing is designed for high-volume ingestion.
+
+- Video/media records are queued in memory instead of creating one GitHub commit per Telegram message.
+- Up to 50 changed JSON files are grouped into one Git commit.
+- A normal flush happens after about 1.5 seconds when the batch is smaller.
+- Video files remain individually addressable at `videos/<PREFIX>/<NUMBER>.json`.
+- Message deduplication remains sharded, so the bot does not scan every message record.
+- The website still reads individual video JSON files; it does not download the whole index.
+- If a GitHub write fails, the queued batch is retained and retried.
+- The indexer should run as a long-lived server process. A graceful shutdown can call `TelegramDb.shutdown()` to flush pending writes.
+
+This means 1,000+ indexed files/day is handled as batches of Git commits rather than 1,000+ individual commits.
