@@ -216,13 +216,70 @@ export class TelegramBotService {
   /**
    * Dispatch sendVideo call to Telegram Bot API
    */
-  private static async sendVideo(\n    chatId: number | string, code: string, videoFileId: string, caption: string\n  ): Promise<BotActionResponse> {\n    const token = this.getBotToken();\n    if (!token) return { ok: false, action: 'sendVideo', chat_id: chatId, code, error: 'TELEGRAM_BOT_TOKEN is not configured' };\n    try {\n      const response = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, video: videoFileId, caption, parse_mode: 'HTML' }) });\n      const result: any = await response.json();\n      if (!response.ok || !result.ok) return { ok: false, action: 'sendVideo', chat_id: chatId, code, error: result.description || `Telegram HTTP ${response.status}` };\n    } catch (e: any) { return { ok: false, action: 'sendVideo', chat_id: chatId, code, error: e.message }; }\n    return { ok: true, action: 'sendVideo', chat_id: chatId, code, video_file_id: videoFileId, caption };\n  }
-  /**
-   * Dispatch copyMessage call to Telegram Bot API
-   */
-  private static async copyMessage(\n    chatId: number | string, code: string, fromChatId: string, messageId: number, caption: string\n  ): Promise<BotActionResponse> {\n    const token = this.getBotToken();\n    if (!token) return { ok: false, action: 'copyMessage', chat_id: chatId, code, error: 'TELEGRAM_BOT_TOKEN is not configured' };\n    try {\n      const response = await fetch(`https://api.telegram.org/bot${token}/copyMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, from_chat_id: fromChatId, message_id: messageId, caption, parse_mode: 'HTML' }) });\n      const result: any = await response.json();\n      if (!response.ok || !result.ok) return { ok: false, action: 'copyMessage', chat_id: chatId, code, error: result.description || `Telegram HTTP ${response.status}` };\n    } catch (e: any) { return { ok: false, action: 'copyMessage', chat_id: chatId, code, error: e.message }; }\n    return { ok: true, action: 'copyMessage', chat_id: chatId, code, from_chat_id: fromChatId, message_id: messageId, caption };\n  }
-  /**
-   * Dispatch sendMessage call to Telegram Bot API
-   */
-  private static async sendMessage(chatId: number | string, text: string, code?: string): Promise<BotActionResponse> {\n    const token = this.getBotToken();\n    if (!token) return { ok: false, action: 'sendMessage', chat_id: chatId, code, error: 'TELEGRAM_BOT_TOKEN is not configured' };\n    try {\n      const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }) });\n      const result: any = await response.json();\n      if (!response.ok || !result.ok) return { ok: false, action: 'sendMessage', chat_id: chatId, code, error: result.description || `Telegram HTTP ${response.status}` };\n    } catch (e: any) { return { ok: false, action: 'sendMessage', chat_id: chatId, code, error: e.message }; }\n    return { ok: true, action: 'sendMessage', chat_id: chatId, code, text };\n  }
+  private static async sendVideo(
+    chatId: number | string, code: string, videoFileId: string, caption: string
+  ): Promise<BotActionResponse> {
+    const token = this.getBotToken();
+    if (!token) return { ok: false, action: 'sendVideo', chat_id: chatId, code, error: 'TELEGRAM_BOT_TOKEN is not configured' };
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, video: videoFileId, caption, parse_mode: 'HTML' }),
+      });
+      const result: any = await response.json();
+      if (!response.ok || !result.ok) {
+        return { ok: false, action: 'sendVideo', chat_id: chatId, code, error: result.description || `Telegram HTTP ${response.status}` };
+      }
+    } catch (e: any) {
+      return { ok: false, action: 'sendVideo', chat_id: chatId, code, error: e.message };
+    }
+
+    return { ok: true, action: 'sendVideo', chat_id: chatId, code, video_file_id: videoFileId, caption };
+  }
+
+  private static async copyMessage(
+    chatId: number | string, code: string, fromChatId: string, messageId: number, caption: string
+  ): Promise<BotActionResponse> {
+    const token = this.getBotToken();
+    if (!token) return { ok: false, action: 'copyMessage', chat_id: chatId, code, error: 'TELEGRAM_BOT_TOKEN is not configured' };
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${token}/copyMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, from_chat_id: fromChatId, message_id: messageId, caption, parse_mode: 'HTML' }),
+      });
+      const result: any = await response.json();
+      if (!response.ok || !result.ok) {
+        return { ok: false, action: 'copyMessage', chat_id: chatId, code, error: result.description || `Telegram HTTP ${response.status}` };
+      }
+    } catch (e: any) {
+      return { ok: false, action: 'copyMessage', chat_id: chatId, code, error: e.message };
+    }
+
+    return { ok: true, action: 'copyMessage', chat_id: chatId, code, from_chat_id: fromChatId, message_id: messageId, caption };
+  }
+
+  private static async sendMessage(chatId: number | string, text: string, code?: string): Promise<BotActionResponse> {
+    const token = this.getBotToken();
+    if (!token) return { ok: false, action: 'sendMessage', chat_id: chatId, code, error: 'TELEGRAM_BOT_TOKEN is not configured' };
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+      });
+      const result: any = await response.json();
+      if (!response.ok || !result.ok) {
+        return { ok: false, action: 'sendMessage', chat_id: chatId, code, error: result.description || `Telegram HTTP ${response.status}` };
+      }
+    } catch (e: any) {
+      return { ok: false, action: 'sendMessage', chat_id: chatId, code, error: e.message };
+    }
+
+    return { ok: true, action: 'sendMessage', chat_id: chatId, code, text };
+  }
 }
