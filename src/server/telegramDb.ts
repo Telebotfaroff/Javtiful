@@ -29,6 +29,14 @@ export interface TelegramVideoIndexRecord {
   updated_at?: string;
 }
 
+export interface PendingMediaGroup {
+  media_group_id: string;
+  channel_id: string;
+  photos: TelegramGalleryItem[];
+  created_at: string;
+  updated_at: string;
+}
+
 interface CacheEntry { expiresAt: number; value: unknown; }
 
 const CACHE_TTL = 60_000;
@@ -45,24 +53,16 @@ export class TelegramDb {
   private static apiBase() { return `https://api.github.com/repos/${this.owner()}/${this.repo()}/contents`; }
   private static rawBase() { return `https://raw.githubusercontent.com/${this.owner()}/${this.repo()}/${encodeURIComponent(this.branch())}`; }
 
-  private static normalizeCode(code: string) {
-    return code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
-  }
-
+  private static normalizeCode(code: string) { return code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, ''); }
   private static videoPath(code: string) {
     const safe = this.normalizeCode(code);
     const match = safe.match(/^(.+)-([0-9]+)$/);
     if (!match) throw new Error(`Invalid JAV code: ${code}`);
     return `videos/${match[1]}/${match[2]}.json`;
   }
-
-  private static messageShard(key: string) {
-    return `messages/${crypto.createHash('sha256').update(key).digest('hex').slice(0, 2)}.json`;
-  }
-
-  private static mediaGroupPath(id: string) {
-    return `media-groups/${encodeURIComponent(String(id))}.json`;
-  }
+  private static messageShard(key: string) { return `messages/${crypto.createHash('sha256').update(key).digest('hex').slice(0, 2)}.json`; }
+  private static mediaGroupPath(id: string) { return `media-groups/${encodeURIComponent(String(id))}.json`; }
+  private static pendingGroupPath(id: string) { return `pending-groups/${encodeURIComponent(String(id))}.json`; }
 
   private static cacheGet<T>(key: string): T | undefined {
     const item = this.cache.get(key);
@@ -70,7 +70,6 @@ export class TelegramDb {
     if (item.expiresAt < Date.now()) { this.cache.delete(key); return undefined; }
     return item.value as T;
   }
-
   private static cacheSet(key: string, value: unknown) {
     if (this.cache.size >= MAX_CACHE) {
       const first = this.cache.keys().next().value;
@@ -83,7 +82,6 @@ export class TelegramDb {
     const cacheKey = `raw:${path}`;
     const cached = this.cacheGet<T>(cacheKey);
     if (cached !== undefined) return cached;
-
     const url = `${this.rawBase()}/${path.split('/').map(encodeURIComponent).join('/')}`;
     const response = await fetch(url, { headers: { 'User-Agent': 'JAVTIFUL-Catalog/1.0', Accept: 'application/json' } });
     if (response.status === 404) return null;
@@ -96,14 +94,8 @@ export class TelegramDb {
   private static async getContent(path: string): Promise<{ content: any; sha?: string } | null> {
     const token = this.token();
     if (!token) throw new Error('TELEGRAM_INDEX_GITHUB_TOKEN or GITHUB_TOKEN is required for index writes');
-
     const response = await fetch(`${this.apiBase()}/${path.split('/').map(encodeURIComponent).join('/')}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'JAVTIFUL-Catalog/1.0',
-      },
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'JAVTIFUL-Catalog/1.0' },
     });
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`Telegram GitHub index content read failed: HTTP ${response.status}`);
@@ -115,25 +107,14 @@ export class TelegramDb {
   private static async putJson(path: string, value: any, message: string): Promise<void> {
     const token = this.token();
     if (!token) throw new Error('TELEGRAM_INDEX_GITHUB_TOKEN or GITHUB_TOKEN is required for index writes');
-
-    const bodyBase: any = {
-      message,
-      content: Buffer.from(JSON.stringify(value, null, 2), 'utf8').toString('base64'),
-      branch: this.branch(),
-    };
+    const bodyBase: any = { message, content: Buffer.from(JSON.stringify(value, null, 2), 'utf8').toString('base64'), branch: this.branch() };
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const current = await this.getContent(path);
       const body = current?.sha ? { ...bodyBase, sha: current.sha } : bodyBase;
       const response = await fetch(`${this.apiBase()}/${path.split('/').map(encodeURIComponent).join('/')}`, {
         method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'User-Agent': 'JAVTIFUL-Catalog/1.0',
-        },
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'JAVTIFUL-Catalog/1.0' },
         body: JSON.stringify(body),
       });
       if (response.ok) { this.cache.delete(`raw:${path}`); return; }
@@ -144,14 +125,48 @@ export class TelegramDb {
 
   static async setMediaGroupCode(mediaGroupId: string, code: string) {
     if (!mediaGroupId || !code) return;
-    await this.putJson(this.mediaGroupPath(mediaGroupId), {
-      media_group_id: String(mediaGroupId), code: this.normalizeCode(code), updated_at: new Date().toISOString()
-    }, `index: map media group ${mediaGroupId}`);
+    await this.putJson(this.mediaGroupPath(mediaGroupId), { media_group_id: String(mediaGroupId), code: this.normalizeCode(code), updated_at: new Date().toISOString() }, `index: map media group ${mediaGroupId}`);
   }
 
   static async getCodeByMediaGroup(mediaGroupId: string) {
     if (!mediaGroupId) return undefined;
     return (await this.fetchRaw<{ code?: string }>(this.mediaGroupPath(mediaGroupId)))?.code;
+  }
+
+  static async addPendingMediaGroup(mediaGroupId: string, item: TelegramGalleryItem & { channel_id: string }) {
+    const path = this.pendingGroupPath(mediaGroupId);
+    const current = await this.getContent(path);
+    const existing: PendingMediaGroup = current?.content || {
+      media_group_id: String(mediaGroupId),
+      channel_id: item.channel_id,
+      photos: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (!existing.photos.some(p => p.message_id === item.message_id || p.file_id === item.file_id)) {
+      existing.photos.push({ message_id: item.message_id, file_id: item.file_id, file_unique_id: item.file_unique_id, width: item.width, height: item.height });
+    }
+    existing.updated_at = new Date().toISOString();
+    await this.putJson(path, existing, `index: pending media group ${mediaGroupId}`);
+  }
+
+  static async getPendingMediaGroup(mediaGroupId: string) {
+    if (!mediaGroupId) return null;
+    return this.fetchRaw<PendingMediaGroup>(this.pendingGroupPath(mediaGroupId));
+  }
+
+  static async clearPendingMediaGroup(mediaGroupId: string) {
+    const path = this.pendingGroupPath(mediaGroupId);
+    const current = await this.getContent(path);
+    if (!current?.sha) return;
+    const token = this.token();
+    const response = await fetch(`${this.apiBase()}/${path.split('/').map(encodeURIComponent).join('/')}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'JAVTIFUL-Catalog/1.0', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: `index: resolve media group ${mediaGroupId}`, sha: current.sha, branch: this.branch() }),
+    });
+    if (!response.ok && response.status !== 404) throw new Error(`Failed to clear pending media group: HTTP ${response.status}`);
+    this.cache.delete(`raw:${path}`);
   }
 
   static async hasMessage(channelId: string, messageId: number) {
@@ -175,7 +190,6 @@ export class TelegramDb {
   static async saveVideo(record: TelegramVideoIndexRecord) {
     const code = this.normalizeCode(record.code);
     const existing = await this.getVideo(code);
-
     if (existing) {
       const gallery = new Map<string, TelegramGalleryItem>();
       for (const item of existing.telegram.gallery || []) gallery.set(item.file_id, item);
@@ -185,11 +199,7 @@ export class TelegramDb {
       record.updated_at = new Date().toISOString();
     }
 
-    const clean: TelegramVideoIndexRecord = {
-      code, telegram: record.telegram, indexed_at: record.indexed_at,
-      ...(record.updated_at ? { updated_at: record.updated_at } : {})
-    };
-
+    const clean: TelegramVideoIndexRecord = { code, telegram: record.telegram, indexed_at: record.indexed_at, ...(record.updated_at ? { updated_at: record.updated_at } : {}) };
     await this.putJson(this.videoPath(code), clean, `index: ${code}`);
     await this.recordMessage(clean.telegram.channel_id, clean.telegram.message_id);
     for (const item of clean.telegram.gallery || []) await this.recordMessage(clean.telegram.channel_id, item.message_id);
@@ -200,26 +210,17 @@ export class TelegramDb {
     const existing = await this.getVideo(code);
     if (existing) {
       existing.telegram.gallery = existing.telegram.gallery || [];
-      if (!existing.telegram.gallery.some(p => p.message_id === photo.message_id || p.file_id === photo.file_id)) {
-        existing.telegram.gallery.push(photo);
-      }
+      if (!existing.telegram.gallery.some(p => p.message_id === photo.message_id || p.file_id === photo.file_id)) existing.telegram.gallery.push(photo);
       existing.updated_at = new Date().toISOString();
       await this.saveVideo(existing);
       return existing;
     }
-
-    const draft: TelegramVideoIndexRecord = {
-      code: this.normalizeCode(code),
-      telegram: { channel_id: channelId, message_id: 0, gallery: [photo] },
-      indexed_at: new Date().toISOString()
-    };
+    const draft: TelegramVideoIndexRecord = { code: this.normalizeCode(code), telegram: { channel_id: channelId, message_id: 0, gallery: [photo] }, indexed_at: new Date().toISOString() };
     await this.saveVideo(draft);
     return draft;
   }
 
-  static async getVideo(code: string) {
-    return this.fetchRaw<TelegramVideoIndexRecord>(this.videoPath(code));
-  }
+  static async getVideo(code: string) { return this.fetchRaw<TelegramVideoIndexRecord>(this.videoPath(code)); }
 
   static async getRecentCodes(limit = 24) {
     const recent = await this.fetchRaw<Array<{ code: string; indexed_at: string }>>('catalog/recent.json');
