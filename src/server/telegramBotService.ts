@@ -1,6 +1,7 @@
 import { detectJavCode } from './codeDetector.ts';
 import { GithubMetadataService } from './githubMetadataService.ts';
 import { TelegramDb } from './telegramDb.ts';
+import { TelegramBackupService } from './telegramBackupService.ts';
 
 export interface BotActionResponse {
   ok: boolean;
@@ -45,6 +46,31 @@ export class TelegramBotService {
       return this.handleHelp(chatId);
     }
 
+    // Command: /backup
+    if (text === '/backup') {
+      const adminId = process.env.TELEGRAM_ADMIN_ID || '';
+      if (!adminId || String(chatId) !== String(adminId)) {
+        return this.sendMessage(chatId, '❌ Admin access required.');
+      }
+      try {
+        const result = await TelegramBackupService.backup();
+        return this.sendMessage(
+          chatId,
+          '✅ <b>Backup completed</b>\\n\\n' +
+          '• Videos: ' + result.videos + '\\n' +
+          '• Gallery items: ' + result.gallery + '\\n' +
+          '• Backup files: ' + result.files + '\\n' +
+          '• Commit: <code>' + escapeHtml(result.commit.slice(0, 12)) + '</code>'
+        );
+      } catch (e: any) {
+        console.error('Telegram index backup failed:', e);
+        return this.sendMessage(
+          chatId,
+          '❌ <b>Backup failed</b>\\n\\n' + escapeHtml(e?.message || 'Unknown backup error')
+        );
+      }
+    }
+
     // Command: /status
     if (text === '/status') {
       const adminId = process.env.TELEGRAM_ADMIN_ID || '';
@@ -77,7 +103,8 @@ export class TelegramBotService {
       `Commands:\n` +
       `• /start - Welcome menu\n` +
       `• /help - Bot usage instructions\n` +
-      `• /status - System index status`
+      `• /status - System index status\\n` +
+      ` + `• /backup - Backup Neon index to private GitHub`
     );
   }
 
@@ -208,7 +235,9 @@ export class TelegramBotService {
       `• <b>Indexed Telegram Videos:</b> ${count ?? 'unknown'}\n` +
       `• <b>GitHub Cached Shards:</b> ${cacheStats.size}\n` +
       `• <b>Service Status:</b> Operational 🟢\n` +
-      `• <b>Storage:</b> External GitHub JSON index`;
+      `• <b>Storage:</b> Neon PostgreSQL (live)\\n` +
+      `• <b>Backup:</b> Private GitHub JSON snapshot\\n` +
+      `• <b>Admin:</b> /backup`;
 
     return this.sendMessage(chatId, text);
   }
