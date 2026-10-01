@@ -171,7 +171,7 @@ export class TelegramIndexer {
     const pending = mediaGroupId ? await TelegramDb.getPendingMediaGroup(mediaGroupId) : null;
     if (pending) {
       record.telegram.gallery = pending.photos;
-      await TelegramDb.clearPendingMediaGroup(mediaGroupId);
+      await TelegramDb.clearPendingMediaGroup(pending.media_group_id);
     }
 
     await TelegramDb.saveVideo(record);

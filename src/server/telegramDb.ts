@@ -120,7 +120,7 @@ export class TelegramDb {
       'SELECT 1 FROM telegram_messages WHERE channel_id = $1 AND message_id = $2 LIMIT 1',
       [channelId, messageId]
     );
-    return r.rowCount > 0;
+    return (r.rowCount || 0) > 0;
   }
 
   private static async recordMessage(channelId: string, messageId: number) {

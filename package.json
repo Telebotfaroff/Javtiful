@@ -22,7 +22,7 @@
     "dotenv": "^17.2.3",
     "motion": "^12.23.24",
     "@neondatabase/serverless": "^1.0.2",
-    "@neon/config": "^0.2.0"
+    "@neon/config": "^1.8.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
