@@ -9,5 +9,4 @@ coverage/
 .aistudio/
 
 # Telegram index is stored in a separate GitHub repository
-telgram-db/
 telegram-db/
