@@ -136,11 +136,13 @@ export const GalleryLightbox: React.FC<GalleryLightboxProps> = ({
           style={{ transform: `scale(${zoom})` }}
           onClick={(e) => e.stopPropagation()}
         >
-          <img
-            src={images[currentIndex]}
-            alt={`Gallery item ${currentIndex + 1}`}
-            className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
-          />
+          {images[currentIndex] ? (
+            <img
+              src={images[currentIndex]}
+              alt={`Gallery item ${currentIndex + 1}`}
+              className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
+            />
+          ) : null}
         </div>
       </div>
     </div>

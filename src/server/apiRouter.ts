@@ -399,44 +399,7 @@ export function handleBackendApiRequest(req: IncomingMessage, res: ServerRespons
     if (!requireAdmin(req)) { sendJson(res, 403, { ok: false, error: 'Admin authorization required' }); return true; }
     sendJson(res, 409, { ok: false, error: 'This deployment uses long polling. Do not configure a Telegram webhook.' });
     return true;
-
-    /* Disabled for the long-polling architecture.
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (!token) { sendJson(res, 503, { ok: false, error: 'TELEGRAM_BOT_TOKEN is not configured' }); return true; }
-    parseJsonBody(req).then(body => {
-      const url = body.url || `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/telegram/webhook`;
-      const secretToken = body.secret_token || process.env.TELEGRAM_WEBHOOK_SECRET || '';
-      const payload = JSON.stringify({
-        url,
-        secret_token: secretToken || undefined,
-        allowed_updates: ['message', 'channel_post'],
-        drop_pending_updates: Boolean(body.drop_pending_updates)
-      });
-      const tgReq = https.request(`https://api.telegram.org/bot${token}/setWebhook`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        }
-      }, apiRes => {
-        let data = '';
-        apiRes.on('data', c => data += c);
-        apiRes.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            sendJson(res, 200, { ok: true, target_url: url, telegram_response: parsed });
-          } catch (e: any) {
-            sendJson(res, 502, { ok: false, error: e.message });
-          }
-        });
-      });
-      tgReq.on('error', err => sendJson(res, 502, { ok: false, error: err.message }));
-      tgReq.write(payload);
-      tgReq.end();
-    }).catch(err => sendJson(res, 400, { ok: false, error: err.message }));
-    return true;
   }
-  */
 
   if (pathname === '/api/telegram/bot/polling/status') {
     sendJson(res, 200, { ok: true, polling: TelegramPollingService.getStatus() });

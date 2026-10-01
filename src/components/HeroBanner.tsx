@@ -19,11 +19,15 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
     <section className="relative overflow-hidden rounded-2xl border border-[#1f293d] bg-[#111827] mb-10 shadow-2xl">
       {/* Background Image with Cinematic Scrim */}
       <div className="absolute inset-0 z-0">
-        <img
-          src={video.thumb}
-          alt={video.title}
-          className="h-full w-full object-cover opacity-25 filter blur-xs scale-105"
-        />
+        {video.thumb ? (
+          <img
+            src={video.thumb}
+            alt={video.title}
+            className="h-full w-full object-cover opacity-25 filter blur-xs scale-105"
+          />
+        ) : (
+          <div className="h-full w-full bg-gradient-to-r from-rose-950/40 via-slate-900 to-[#0b0f19]" />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b0f19] via-[#0b0f19]/80 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0b0f19] via-[#0b0f19]/90 to-transparent" />
       </div>
@@ -33,13 +37,19 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
         {/* Cover Preview Card */}
         <div
           onClick={() => onOpenDetails(video)}
-          className="group relative aspect-[3/4] w-44 sm:w-52 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 shadow-xl transition-transform duration-300 hover:scale-102"
+          className="group relative aspect-[3/4] w-44 sm:w-52 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-xl transition-transform duration-300 hover:scale-102"
         >
-          <img
-            src={video.thumb}
-            alt={video.title}
-            className="h-full w-full object-cover"
-          />
+          {video.thumb ? (
+            <img
+              src={video.thumb}
+              alt={video.title}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 to-rose-950/50 text-center p-4">
+              <span className="font-mono text-base font-bold text-slate-300">{video.code}</span>
+            </div>
+          )}
           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
             <span className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">
               <Eye className="h-3.5 w-3.5" />

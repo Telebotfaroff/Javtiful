@@ -71,20 +71,31 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
         {/* Left Column: Large High-Resolution Cover Image */}
         <div className="lg:col-span-5 space-y-4">
           <div className="group relative overflow-hidden rounded-2xl border border-[#1f293d] bg-slate-900 shadow-2xl">
-            <img
-              src={video.thumb}
-              alt={video.title}
-              className="w-full object-cover transition-transform duration-300 group-hover:scale-102"
-            />
+            {video.thumb ? (
+              <img
+                src={video.thumb}
+                alt={video.title}
+                className="w-full object-cover transition-transform duration-300 group-hover:scale-102"
+              />
+            ) : (
+              <div className="flex aspect-[16/10] w-full items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-rose-950/40 text-center p-6">
+                <div>
+                  <span className="font-mono text-xl font-bold text-slate-300 block">{video.code}</span>
+                  <span className="text-xs text-slate-500 mt-1 block">Full media available via Telegram bot</span>
+                </div>
+              </div>
+            )}
             {/* Click to inspect cover in lightbox */}
-            <button
-              onClick={() => onOpenLightbox(video.thumb, 0)}
-              title="Expand cover"
-              className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg bg-black/70 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-xs hover:bg-black/90 transition-colors"
-            >
-              <Maximize2 className="h-3.5 w-3.5" />
-              <span>Full Cover</span>
-            </button>
+            {video.thumb && (
+              <button
+                onClick={() => onOpenLightbox(video.thumb, 0)}
+                title="Expand cover"
+                className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg bg-black/70 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-xs hover:bg-black/90 transition-colors"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+                <span>Full Cover</span>
+              </button>
+            )}
 
             {/* JAV Code Tag */}
             <div className="absolute top-3 left-3 rounded-md bg-black/80 px-2.5 py-1 text-xs font-mono font-bold text-white border border-white/10 backdrop-blur-xs">
@@ -246,7 +257,7 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {video.gallery.map((img, idx) => (
+            {video.gallery.filter(Boolean).map((img, idx) => (
               <div
                 key={idx}
                 onClick={() => onOpenLightbox(img, idx)}

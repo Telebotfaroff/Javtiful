@@ -22,13 +22,22 @@ export const VideoCard: React.FC<VideoCardProps> = ({
     >
       {/* Thumbnail Container */}
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-900">
-        <img
-          src={video.thumb}
-          alt={video.title}
-          referrerPolicy="no-referrer"
-          loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-104"
-        />
+        {video.thumb ? (
+          <img
+            src={video.thumb}
+            alt={video.title}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-104"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-rose-950/40 text-slate-500">
+            <div className="text-center p-4">
+              <span className="font-mono text-sm font-bold text-slate-400 block">{video.code}</span>
+              <span className="text-[11px] text-slate-500 mt-1 block">Video Indexed</span>
+            </div>
+          </div>
+        )}
 
         {/* Gradient Scrim */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#111827] via-transparent to-transparent opacity-80" />
