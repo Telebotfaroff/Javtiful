@@ -44,6 +44,7 @@ export class TelegramPollingService {
       return { ok: true, message: 'Long polling is already active' };
     }
 
+    // Long polling and webhooks are mutually exclusive. Always clear any old webhook first.
     this.isRunning = true;
     this.abortController = new AbortController();
 
@@ -86,7 +87,8 @@ export class TelegramPollingService {
     while (this.isRunning) {
       this.lastPollTime = new Date().toISOString();
       try {
-        const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${this.offset}&timeout=20&allowed_updates=["message","channel_post"]`;
+        const allowedUpdates = encodeURIComponent(JSON.stringify(['message', 'channel_post']));
+        const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${this.offset}&timeout=20&allowed_updates=${allowedUpdates}`;
         const res = await fetch(url, {
           signal: this.abortController?.signal,
         });
@@ -137,6 +139,12 @@ export class TelegramPollingService {
    */
   private static async processSingleUpdate(update: any): Promise<void> {
     if (update.channel_post) {
+      const configuredChannel = process.env.TELEGRAM_CHANNEL_ID?.trim();
+      const postChannel = String(update.channel_post.chat?.id || '');
+      if (configuredChannel && postChannel !== configuredChannel) {
+        console.warn(`Ignoring channel post from ${postChannel}; expected ${configuredChannel}.`);
+        return;
+      }
       await TelegramIndexer.processPost(update.channel_post);
       return;
     }
