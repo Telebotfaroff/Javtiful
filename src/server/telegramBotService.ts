@@ -47,6 +47,10 @@ export class TelegramBotService {
 
     // Command: /status
     if (text === '/status') {
+      const adminId = process.env.TELEGRAM_ADMIN_ID || '';
+      if (!adminId || String(chatId) !== String(adminId)) {
+        return this.sendMessage(chatId, '❌ Admin access required.');
+      }
       return this.handleStatus(chatId);
     }
 
