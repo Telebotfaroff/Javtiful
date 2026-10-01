@@ -8,11 +8,20 @@ import { fileURLToPath } from 'url';
 import { handleBackendApiRequest } from './src/server/apiRouter.ts';
 
 import { TelegramPollingService } from './src/server/telegramPollingService.ts';
+import { TelegramDb } from './src/server/telegramDb.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
+  // Initialize Neon before any Telegram update can be processed.
+  if (process.env.DATABASE_URL) {
+    await TelegramDb.init();
+    console.log('Neon Telegram index tables initialized.');
+  } else {
+    console.warn('DATABASE_URL is not configured; Telegram indexing will not work.');
+  }
+
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
   const isProd = process.env.NODE_ENV === 'production';
