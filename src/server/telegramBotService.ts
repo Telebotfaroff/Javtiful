@@ -89,7 +89,7 @@ export class TelegramBotService {
 
     // 2. Fetch authoritative metadata from GitHub scraper (Requirement 4)
     let metadata: any = null;
-    let metadataFound = tgRecord?.metadataFound || false;
+    let metadataFound = false;
 
     try {
       const ghResult = await GithubMetadataService.lookup(code);
@@ -201,10 +201,10 @@ export class TelegramBotService {
 
     const text =
       `📊 <b>System Status</b>\n\n` +
-      `• <b>Indexed Telegram Videos:</b> ${count}\n` +
+      `• <b>Indexed Telegram Videos:</b> ${count ?? 'unknown'}\n` +
       `• <b>GitHub Cached Shards:</b> ${cacheStats.size}\n` +
       `• <b>Service Status:</b> Operational 🟢\n` +
-      `• <b>Storage:</b> Local JSON Database`;
+      `• <b>Storage:</b> External GitHub JSON index`;
 
     return this.sendMessage(chatId, text);
   }
@@ -212,114 +212,13 @@ export class TelegramBotService {
   /**
    * Dispatch sendVideo call to Telegram Bot API
    */
-  private static async sendVideo(
-    chatId: number | string,
-    code: string,
-    videoFileId: string,
-    caption: string
-  ): Promise<BotActionResponse> {
-    const token = this.getBotToken();
-
-    if (token) {
-      try {
-        await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            video: videoFileId,
-            caption,
-            parse_mode: 'HTML',
-          }),
-        });
-      } catch (e: any) {
-        console.error('Failed to dispatch sendVideo to Telegram API:', e.message);
-      }
-    }
-
-    return {
-      ok: true,
-      action: 'sendVideo',
-      chat_id: chatId,
-      code,
-      video_file_id: videoFileId,
-      caption,
-    };
-  }
-
+  private static async sendVideo(\n    chatId: number | string, code: string, videoFileId: string, caption: string\n  ): Promise<BotActionResponse> {\n    const token = this.getBotToken();\n    if (!token) return { ok: false, action: 'sendVideo', chat_id: chatId, code, error: 'TELEGRAM_BOT_TOKEN is not configured' };\n    try {\n      const response = await fetch(`https://api.telegram.org/bot\${token}/sendVideo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, video: videoFileId, caption, parse_mode: 'HTML' }) });\n      const result: any = await response.json();\n      if (!response.ok || !result.ok) return { ok: false, action: 'sendVideo', chat_id: chatId, code, error: result.description || `Telegram HTTP \${response.status}` };\n    } catch (e: any) { return { ok: false, action: 'sendVideo', chat_id: chatId, code, error: e.message }; }\n    return { ok: true, action: 'sendVideo', chat_id: chatId, code, video_file_id: videoFileId, caption };\n  }
   /**
    * Dispatch copyMessage call to Telegram Bot API
    */
-  private static async copyMessage(
-    chatId: number | string,
-    code: string,
-    fromChatId: string,
-    messageId: number,
-    caption: string
-  ): Promise<BotActionResponse> {
-    const token = this.getBotToken();
-
-    if (token) {
-      try {
-        await fetch(`https://api.telegram.org/bot${token}/copyMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            from_chat_id: fromChatId,
-            message_id: messageId,
-            caption,
-            parse_mode: 'HTML',
-          }),
-        });
-      } catch (e: any) {
-        console.error('Failed to dispatch copyMessage to Telegram API:', e.message);
-      }
-    }
-
-    return {
-      ok: true,
-      action: 'copyMessage',
-      chat_id: chatId,
-      code,
-      from_chat_id: fromChatId,
-      message_id: messageId,
-      caption,
-    };
-  }
-
+  private static async copyMessage(\n    chatId: number | string, code: string, fromChatId: string, messageId: number, caption: string\n  ): Promise<BotActionResponse> {\n    const token = this.getBotToken();\n    if (!token) return { ok: false, action: 'copyMessage', chat_id: chatId, code, error: 'TELEGRAM_BOT_TOKEN is not configured' };\n    try {\n      const response = await fetch(`https://api.telegram.org/bot\${token}/copyMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, from_chat_id: fromChatId, message_id: messageId, caption, parse_mode: 'HTML' }) });\n      const result: any = await response.json();\n      if (!response.ok || !result.ok) return { ok: false, action: 'copyMessage', chat_id: chatId, code, error: result.description || `Telegram HTTP \${response.status}` };\n    } catch (e: any) { return { ok: false, action: 'copyMessage', chat_id: chatId, code, error: e.message }; }\n    return { ok: true, action: 'copyMessage', chat_id: chatId, code, from_chat_id: fromChatId, message_id: messageId, caption };\n  }
   /**
    * Dispatch sendMessage call to Telegram Bot API
    */
-  private static async sendMessage(
-    chatId: number | string,
-    text: string,
-    code?: string
-  ): Promise<BotActionResponse> {
-    const token = this.getBotToken();
-
-    if (token) {
-      try {
-        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text,
-            parse_mode: 'HTML',
-          }),
-        });
-      } catch (e: any) {
-        console.error('Failed to dispatch sendMessage to Telegram API:', e.message);
-      }
-    }
-
-    return {
-      ok: true,
-      action: 'sendMessage',
-      chat_id: chatId,
-      code,
-      text,
-    };
-  }
+  private static async sendMessage(chatId: number | string, text: string, code?: string): Promise<BotActionResponse> {\n    const token = this.getBotToken();\n    if (!token) return { ok: false, action: 'sendMessage', chat_id: chatId, code, error: 'TELEGRAM_BOT_TOKEN is not configured' };\n    try {\n      const response = await fetch(`https://api.telegram.org/bot\${token}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }) });\n      const result: any = await response.json();\n      if (!response.ok || !result.ok) return { ok: false, action: 'sendMessage', chat_id: chatId, code, error: result.description || `Telegram HTTP \${response.status}` };\n    } catch (e: any) { return { ok: false, action: 'sendMessage', chat_id: chatId, code, error: e.message }; }\n    return { ok: true, action: 'sendMessage', chat_id: chatId, code, text };\n  }
 }
