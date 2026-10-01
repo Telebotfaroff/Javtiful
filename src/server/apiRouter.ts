@@ -40,20 +40,33 @@ function galleryUrls(code: string, gallery: any[] | undefined): string[] {
 }
 
 async function toVideoRecord(tg: any): Promise<VideoRecord | null> {
-  const gh = await GithubMetadataService.lookup(tg.code);
-  if (!gh.metadataFound || !gh.video) return null;
-  const v = gh.video;
+  // Neon is the source of truth for availability. Scraper metadata is optional enrichment.
+  let metadata: any = null;
+  try {
+    const gh = await GithubMetadataService.lookup(tg.code);
+    if (gh.metadataFound && gh.video) metadata = gh.video;
+  } catch (e: any) {
+    console.warn(`Metadata lookup failed for ${tg.code}: ${e.message}`);
+  }
+
+  const gallery = galleryUrls(tg.code, tg.telegram?.gallery);
+  const telegramDuration = tg.telegram?.duration;
+  const duration = metadata?.duration ||
+    (typeof telegramDuration === 'number'
+      ? new Date(telegramDuration * 1000).toISOString().substring(11, 19)
+      : 'N/A');
+
   return {
     code: tg.code,
-    title: v.title,
-    url: v.url,
-    thumb: v.thumb,
-    duration: v.duration,
-    date: v.date || tg.indexed_at?.split('T')[0] || '',
-    actresses: v.actresses || [],
-    studio: v.studio || null,
-    genres: v.genres || [],
-    gallery: galleryUrls(tg.code, tg.telegram?.gallery),
+    title: metadata?.title || `Release ${tg.code}`,
+    url: metadata?.url,
+    thumb: metadata?.thumb || gallery[0] || '',
+    duration,
+    date: metadata?.date || tg.indexed_at?.split('T')[0] || '',
+    actresses: metadata?.actresses || [],
+    studio: metadata?.studio || null,
+    genres: metadata?.genres || [],
+    gallery,
     telegram: tg.telegram,
   };
 }
@@ -169,9 +182,8 @@ export function handleBackendApiRequest(req: IncomingMessage, res: ServerRespons
     const rawCode = decodeURIComponent(singleVideoMatch[1]);
     const normalized = normalizeCode(rawCode);
     TelegramDb.getVideo(normalized).then(async tgRecord => {
-      const ghRes = await GithubMetadataService.lookup(normalized);
-      if (!tgRecord || !ghRes.metadataFound || !ghRes.video) {
-        sendJson(res, 404, { ok: false, error: `Video code '${rawCode}' is not indexed in Telegram and metadata` });
+      if (!tgRecord) {
+        sendJson(res, 404, { ok: false, error: `Video code '${rawCode}' is not indexed in Telegram` });
         return;
       }
       sendJson(res, 200, { ok: true, video: await toVideoRecord(tgRecord), related: [], source: 'telegram' });
