@@ -303,25 +303,32 @@ export function handleBackendApiRequest(req: IncomingMessage, res: ServerRespons
   }
 
   if (pathname === '/api/telegram/manual-index' && req.method === 'POST') {
+    if (!requireAdmin(req)) {
+      sendJson(res, 403, { ok: false, error: 'Admin authorization required' });
+      return true;
+    }
     parseJsonBody(req).then(async body => {
       const code = (body.code || '').trim().toUpperCase();
+      const videoFileId = String(body.video_file_id || '').trim();
       if (!code) throw new Error('Missing code field');
-      const channelId = body.channel_id || process.env.TELEGRAM_CHANNEL_ID || '-1003819354327';
-      const messageId = Number(body.message_id || Math.floor(Math.random() * 80000) + 1000);
-      const videoFileId = body.video_file_id || `BAACAg_FILE_${code.replace(/[^A-Z0-9]/g, '_')}`;
+      if (!videoFileId) throw new Error('Missing real Telegram video_file_id');
+      const channelId = body.channel_id || process.env.TELEGRAM_CHANNEL_ID;
+      if (!channelId) throw new Error('TELEGRAM_CHANNEL_ID is not configured');
+      const messageId = Number(body.message_id);
+      if (!Number.isInteger(messageId) || messageId <= 0) throw new Error('Missing valid message_id');
 
       const post = {
         chat: { id: channelId },
         message_id: messageId,
-        caption: `[${code}] Official Release`,
+        caption: body.caption || `[${code}] Official Release`,
         video: {
           file_id: videoFileId,
-          file_unique_id: `uniq_${code.toLowerCase()}`,
-          duration: Number(body.duration || 7200),
-          width: 1920,
-          height: 1080,
-          file_size: 1024 * 1024 * 500,
-          mime_type: 'video/mp4',
+          file_unique_id: body.file_unique_id,
+          duration: body.duration == null ? undefined : Number(body.duration),
+          width: body.width == null ? undefined : Number(body.width),
+          height: body.height == null ? undefined : Number(body.height),
+          file_size: body.file_size == null ? undefined : Number(body.file_size),
+          mime_type: body.mime_type || 'video/mp4',
         },
       };
 
@@ -389,6 +396,11 @@ export function handleBackendApiRequest(req: IncomingMessage, res: ServerRespons
   }
 
   if (pathname === '/api/telegram/bot/setup-webhook' && req.method === 'POST') {
+    if (!requireAdmin(req)) { sendJson(res, 403, { ok: false, error: 'Admin authorization required' }); return true; }
+    sendJson(res, 409, { ok: false, error: 'This deployment uses long polling. Do not configure a Telegram webhook.' });
+    return true;
+
+    /* Disabled for the long-polling architecture.
     const token = process.env.TELEGRAM_BOT_TOKEN;
     if (!token) { sendJson(res, 503, { ok: false, error: 'TELEGRAM_BOT_TOKEN is not configured' }); return true; }
     parseJsonBody(req).then(body => {
@@ -424,6 +436,7 @@ export function handleBackendApiRequest(req: IncomingMessage, res: ServerRespons
     }).catch(err => sendJson(res, 400, { ok: false, error: err.message }));
     return true;
   }
+  */
 
   if (pathname === '/api/telegram/bot/polling/status') {
     sendJson(res, 200, { ok: true, polling: TelegramPollingService.getStatus() });
