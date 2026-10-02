@@ -2,7 +2,7 @@ import { Pool } from '@neondatabase/serverless';
 
 export interface TelegramGalleryItem {
   message_id: number;
-  file_id: string;
+  file_id?: string;
   file_unique_id?: string;
   width?: number;
   height?: number;
@@ -10,7 +10,7 @@ export interface TelegramGalleryItem {
 
 export interface TelegramVideoFile {
   message_id: number;
-  file_id: string;
+  file_id?: string;
   file_unique_id?: string;
   duration?: number;
   width?: number;
@@ -133,6 +133,23 @@ export class TelegramDb {
         label TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         CONSTRAINT unique_code_video_file UNIQUE (code, file_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS telegram_history_media (
+        id SERIAL PRIMARY KEY,
+        code TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        message_id BIGINT NOT NULL,
+        media_type TEXT NOT NULL,
+        media_group_id TEXT,
+        caption TEXT,
+        duration INT,
+        width INT,
+        height INT,
+        file_size BIGINT,
+        mime_type TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        CONSTRAINT unique_history_channel_message UNIQUE (channel_id, message_id)
       );
 
       CREATE TABLE IF NOT EXISTS telegram_recent (
@@ -380,6 +397,72 @@ export class TelegramDb {
     return (await this.getVideo(normalized))!;
   }
 
+  static async addHistoricalMessage(item: {
+    code: string;
+    channel_id: string;
+    message_id: number;
+    media_type: 'image' | 'video';
+    media_group_id?: string;
+    caption?: string;
+    duration?: number;
+    width?: number;
+    height?: number;
+    file_size?: number;
+    mime_type?: string;
+  }) {
+    const code = this.normalizeCode(item.code);
+
+    await this.db().query(
+      `INSERT INTO telegram_videos
+       (code, channel_id, message_id, indexed_at, updated_at, media_type)
+       VALUES ($1,$2,$3,NOW(),NOW(),$4)
+       ON CONFLICT (code) DO UPDATE SET
+       updated_at=NOW(),
+       channel_id=EXCLUDED.channel_id,
+       media_type=CASE
+         WHEN telegram_videos.media_type='image' AND EXCLUDED.media_type='video' THEN 'mixed'
+         WHEN telegram_videos.media_type='video' AND EXCLUDED.media_type='image' THEN 'mixed'
+         ELSE telegram_videos.media_type
+       END`,
+      [code, item.channel_id, item.message_id, item.media_type]
+    );
+
+    await this.db().query(
+      `INSERT INTO telegram_history_media
+       (code, channel_id, message_id, media_type, media_group_id, caption, duration, width, height, file_size, mime_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (channel_id, message_id) DO UPDATE SET
+       code=EXCLUDED.code,
+       media_type=EXCLUDED.media_type,
+       media_group_id=EXCLUDED.media_group_id,
+       caption=EXCLUDED.caption,
+       duration=EXCLUDED.duration,
+       width=EXCLUDED.width,
+       height=EXCLUDED.height,
+       file_size=EXCLUDED.file_size,
+       mime_type=EXCLUDED.mime_type`,
+      [
+        code,
+        item.channel_id,
+        item.message_id,
+        item.media_type,
+        item.media_group_id || null,
+        item.caption || null,
+        item.duration ?? null,
+        item.width ?? null,
+        item.height ?? null,
+        item.file_size ?? null,
+        item.mime_type || null,
+      ]
+    );
+
+    await this.recordMessage(item.channel_id, item.message_id);
+    await this.db().query(
+      'INSERT INTO telegram_recent (code, indexed_at) VALUES ($1,NOW()) ON CONFLICT (code) DO UPDATE SET indexed_at=NOW()',
+      [code]
+    );
+  }
+
   static async saveVideo(record: TelegramVideoIndexRecord) {
     const code = this.normalizeCode(record.code);
     const existing = await this.getVideo(code);
@@ -492,13 +575,17 @@ export class TelegramDb {
     );
     if (!r.rows[0]) return null;
 
-    const [gRes, vRes] = await Promise.all([
+    const [gRes, vRes, hRes] = await Promise.all([
       this.db().query(
         'SELECT message_id,file_id,file_unique_id,width,height FROM telegram_gallery WHERE code=$1 ORDER BY id ASC',
         [normalized]
       ),
       this.db().query(
         'SELECT message_id,file_id,file_unique_id,duration,width,height,file_size,mime_type,label FROM telegram_video_files WHERE code=$1 ORDER BY id ASC',
+        [normalized]
+      ),
+      this.db().query(
+        'SELECT message_id,media_type,media_group_id,duration,width,height,file_size,mime_type FROM telegram_history_media WHERE code=$1 ORDER BY id ASC',
         [normalized]
       ),
     ]);
@@ -525,7 +612,27 @@ export class TelegramDb {
       label: x.label || (vRes.rows.length > 1 ? `Part ${idx + 1}` : undefined),
     }));
 
-    const hasVideos = videoFiles.length > 0 || Boolean(row.video_file_id);
+    const historyVideos: TelegramVideoFile[] = hRes.rows
+      .filter((x: any) => x.media_type === 'video')
+      .map((x: any) => ({
+        message_id: Number(x.message_id),
+        duration: x.duration == null ? undefined : Number(x.duration),
+        width: x.width == null ? undefined : Number(x.width),
+        height: x.height == null ? undefined : Number(x.height),
+        file_size: x.file_size == null ? undefined : Number(x.file_size),
+        mime_type: x.mime_type || undefined,
+      }));
+
+    const historyGallery: TelegramGalleryItem[] = hRes.rows
+      .filter((x: any) => x.media_type === 'image')
+      .map((x: any) => ({
+        message_id: Number(x.message_id),
+      }));
+
+    const allVideos = videoFiles.length > 0 ? videoFiles : historyVideos;
+    const allGallery = gallery.length > 0 ? gallery : historyGallery;
+    const hasVideos = allVideos.length > 0 || Boolean(row.video_file_id);
+    const hasGallery = allGallery.length > 0;
     const hasGallery = gallery.length > 0;
     const mediaType: 'image' | 'video' | 'mixed' =
       row.media_type === 'image' || row.media_type === 'mixed'
@@ -552,8 +659,8 @@ export class TelegramDb {
         file_size: row.file_size == null ? (videoFiles[0]?.file_size) : Number(row.file_size),
         mime_type: row.mime_type || (videoFiles[0]?.mime_type) || undefined,
         media_group_id: row.media_group_id || undefined,
-        gallery,
-        videos: videoFiles.length > 0 ? videoFiles : undefined,
+        gallery: allGallery.length > 0 ? allGallery : undefined,
+        videos: allVideos.length > 0 ? allVideos : undefined,
       },
       indexed_at: new Date(row.indexed_at).toISOString(),
       updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
