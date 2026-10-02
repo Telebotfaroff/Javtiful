@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Eye, Clock, Calendar, Layers, Image as ImageIcon, Heart, Play } from 'lucide-react';
+import { Send, Eye, Clock, Calendar, Layers, Image as ImageIcon, Heart } from 'lucide-react';
 import type { VideoRecord } from '../types/video.ts';
 
 interface VideoCardProps {
@@ -74,7 +74,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
               <span>{galleryCount}</span>
             </div>
           )}
-          {!isImageOnly && (
+          {!isImageOnly && video.duration && video.duration !== 'N/A' && (
             <div className="flex items-center gap-1 rounded-md bg-black/80 px-2 py-0.5 text-[11px] font-mono text-slate-200 backdrop-blur-xs border border-white/10">
               <Clock className="h-3 w-3 text-slate-400" />
               <span>{video.duration}</span>
@@ -82,7 +82,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           )}
         </div>
 
-        {/* Favorite Heart Button matching reference (bottom-right on image) */}
+        {/* Favorite Heart Button (bottom-right on image) */}
         <button
           onClick={toggleFavorite}
           title={isFavorited ? 'Favorited' : 'Add to Favorites'}
@@ -96,10 +96,11 @@ export const VideoCard: React.FC<VideoCardProps> = ({
         </button>
 
         {/* Hover Action Overlay */}
-        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-3 z-20">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ff2a7a] text-white shadow-lg shadow-[#ff2a7a]/50">
-            <Play className="h-5 w-5 fill-white ml-0.5" />
-          </div>
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-3 z-20">
+          <span className="flex items-center gap-1.5 rounded-xl bg-black/85 px-3 py-1.5 text-xs font-semibold text-white border border-white/10 backdrop-blur-xs">
+            <Eye className="h-3.5 w-3.5 text-[#ff2a7a]" />
+            <span>View Release</span>
+          </span>
         </div>
       </div>
 
@@ -145,7 +146,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           )}
         </div>
 
-        {/* Footer: Date & Quick Telegram Link */}
+        {/* Footer: Date & Direct Telegram Link */}
         <div className="mt-auto pt-2 border-t border-[#1e2433] flex items-center justify-between text-[11px] text-slate-500">
           <span className="flex items-center gap-1 font-mono text-slate-400">
             <Calendar className="h-3 w-3 text-slate-500" />

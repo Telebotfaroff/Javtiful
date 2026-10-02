@@ -15,8 +15,7 @@ import {
   Layers,
   Film,
   Sparkles,
-  Play,
-  Share2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { VideoRecord } from '../types/video.ts';
 import { VideoCard } from './VideoCard.tsx';
@@ -105,13 +104,13 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
         </div>
       </div>
 
-      {/* Hero Video Player Frame matching reference layout */}
+      {/* Main High-Resolution Preview Banner (Image based, no fake video player) */}
       <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-[#1e2433] bg-black shadow-2xl group">
         {video.thumb ? (
           <img
             src={video.thumb}
             alt={video.title}
-            className="h-full w-full object-cover opacity-85 group-hover:scale-102 transition-transform duration-500"
+            className="h-full w-full object-cover group-hover:scale-102 transition-transform duration-500"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-950 via-[#161b26] to-[#ff2a7a]/20">
@@ -119,34 +118,41 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
           </div>
         )}
 
-        {/* Video Scrim Gradient */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+        {/* Gradient Scrim */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none" />
 
-        {/* Central Big Play CTA */}
-        <a
-          href={telegramDeepLink}
-          target="_blank"
-          rel="noreferrer"
-          className="absolute inset-0 flex items-center justify-center"
-        >
-          <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full bg-[#ff2a7a] text-white shadow-2xl shadow-[#ff2a7a]/60 transition-transform duration-300 hover:scale-110 active:scale-95">
-            <Play className="h-8 w-8 sm:h-10 sm:w-10 fill-white ml-1" />
-          </div>
-        </a>
+        {/* Top-Right Expand Fullscreen Preview */}
+        {video.thumb && (
+          <button
+            onClick={() => onOpenLightbox(video.thumb, 0)}
+            className="absolute top-4 right-4 flex items-center gap-1.5 rounded-xl bg-black/70 hover:bg-black/90 px-3 py-2 text-xs font-medium text-white backdrop-blur-xs transition-colors border border-white/10 z-10"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+            <span>View Full Image</span>
+          </button>
+        )}
 
         {/* Bottom Overlay Info */}
-        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-xs text-white">
+        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-xs text-white z-10">
           <div className="flex items-center gap-2">
             <span className="font-mono font-bold text-xs bg-black/80 backdrop-blur-xs px-2.5 py-1 rounded-md border border-white/10">
               {video.code}
             </span>
             <span className="bg-[#ff2a7a] text-white font-bold px-2 py-0.5 rounded text-[11px]">
-              HD 1080p
+              HD Quality
             </span>
+            {galleryItems.length > 0 && (
+              <span className="bg-black/80 backdrop-blur-xs px-2 py-0.5 rounded text-[11px] text-slate-300 border border-white/10 flex items-center gap-1">
+                <ImageIcon className="h-3 w-3 text-[#38bdf8]" />
+                <span>{galleryItems.length} Gallery Photos</span>
+              </span>
+            )}
           </div>
-          <div className="font-mono text-xs bg-black/80 backdrop-blur-xs px-3 py-1 rounded-md border border-white/10">
-            {video.duration}
-          </div>
+          {video.duration && video.duration !== 'N/A' && (
+            <div className="font-mono text-xs bg-black/80 backdrop-blur-xs px-3 py-1 rounded-md border border-white/10">
+              {video.duration}
+            </div>
+          )}
         </div>
       </div>
 
@@ -180,7 +186,7 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
         </h1>
       </div>
 
-      {/* Full-Width Hot Pink Primary CTA Button matching reference */}
+      {/* Full-Width Hot Pink Primary CTA Button (Telegram Bot Media Delivery) */}
       <a
         href={telegramDeepLink}
         target="_blank"
@@ -373,7 +379,7 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
         </div>
       </div>
 
-      {/* Section: Screenshots & Post Gallery (Supports 6+ images) */}
+      {/* Section: Screenshots & Post Gallery */}
       {galleryItems.length > 0 && (
         <section className="space-y-4 pt-6 border-t border-[#1e2433]">
           <div className="flex items-center justify-between">
@@ -422,7 +428,7 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
           <div className="flex items-center gap-2">
             <div className="h-5 w-1 rounded-full bg-[#ff2a7a]" />
             <div>
-              <h2 className="text-base font-bold text-white">Related Videos</h2>
+              <h2 className="text-base font-bold text-white">Related Releases</h2>
               <p className="text-xs text-slate-400">
                 More releases with {video.actresses[0] || video.studio || 'similar genres'}
               </p>

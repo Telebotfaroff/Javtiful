@@ -1,5 +1,5 @@
 import React from 'react';
-import { Send, Eye, Clock, Calendar, Building, Sparkles, Flame, Play } from 'lucide-react';
+import { Send, Eye, Clock, Calendar, Building, Sparkles, Flame, Maximize2 } from 'lucide-react';
 import type { VideoRecord } from '../types/video.ts';
 
 interface HeroBannerProps {
@@ -35,7 +35,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
       {/* Content Grid */}
       <div className="relative z-10 p-6 sm:p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center gap-6 sm:gap-8">
-        {/* Cover Preview Card with Play Overlay */}
+        {/* Cover Preview Card */}
         <div
           onClick={() => onOpenDetails(video)}
           className="group/thumb relative aspect-[16/10] sm:aspect-[3/4] w-full md:w-56 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-2xl transition-all duration-300 hover:scale-102 hover:border-[#ff2a7a]/50"
@@ -52,17 +52,20 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             </div>
           )}
 
-          {/* Central Play Button Overlay */}
-          <div className="absolute inset-0 bg-black/40 opacity-70 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#ff2a7a] text-white shadow-lg shadow-[#ff2a7a]/50 transition-transform group-hover/thumb:scale-110">
-              <Play className="h-6 w-6 fill-white ml-0.5" />
-            </div>
+          {/* Hover Inspect Overlay */}
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
+            <span className="flex items-center gap-1.5 rounded-xl bg-black/80 px-3 py-1.5 text-xs font-semibold text-white border border-white/10 backdrop-blur-xs">
+              <Eye className="h-3.5 w-3.5 text-[#ff2a7a]" />
+              <span>View Details</span>
+            </span>
           </div>
 
           {/* Duration overlay badge */}
-          <div className="absolute bottom-2.5 right-2.5 rounded-md bg-black/85 px-2 py-0.5 text-[11px] font-mono text-white backdrop-blur-xs border border-white/10">
-            {video.duration}
-          </div>
+          {video.duration && video.duration !== 'N/A' && (
+            <div className="absolute bottom-2.5 right-2.5 rounded-md bg-black/85 px-2 py-0.5 text-[11px] font-mono text-white backdrop-blur-xs border border-white/10">
+              {video.duration}
+            </div>
+          )}
         </div>
 
         {/* Text and Actions */}
@@ -107,11 +110,15 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
                 </span>
               </>
             )}
-            <span aria-hidden="true" className="text-slate-600">·</span>
-            <span className="flex items-center gap-1 text-slate-400 font-mono">
-              <Clock className="h-3.5 w-3.5" />
-              {video.duration}
-            </span>
+            {video.duration && video.duration !== 'N/A' && (
+              <>
+                <span aria-hidden="true" className="text-slate-600">·</span>
+                <span className="flex items-center gap-1 text-slate-400 font-mono">
+                  <Clock className="h-3.5 w-3.5" />
+                  {video.duration}
+                </span>
+              </>
+            )}
             <span aria-hidden="true" className="text-slate-600">·</span>
             <span className="flex items-center gap-1 text-slate-400 font-mono">
               <Calendar className="h-3.5 w-3.5" />
@@ -133,7 +140,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             </div>
           )}
 
-          {/* CTA Buttons matching reference */}
+          {/* CTA Buttons */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
             {/* Primary Hot Pink Button */}
             <a
