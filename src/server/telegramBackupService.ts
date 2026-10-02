@@ -94,9 +94,11 @@ export class TelegramBackupService {
   }
 
   static async backup() {
-    const [videos, gallery, groups, pending, messages, recent] = await Promise.all([
+    const [videos, videoFiles, gallery, historyMedia, groups, pending, messages, recent] = await Promise.all([
       this.rows('SELECT * FROM telegram_videos ORDER BY code'),
+      this.rows('SELECT * FROM telegram_video_files ORDER BY id'),
       this.rows('SELECT * FROM telegram_gallery ORDER BY id'),
+      this.rows('SELECT * FROM telegram_history_media ORDER BY id'),
       this.rows('SELECT * FROM telegram_media_groups ORDER BY media_group_id'),
       this.rows('SELECT * FROM telegram_pending_groups ORDER BY media_group_id'),
       this.rows('SELECT * FROM telegram_messages ORDER BY channel_id, message_id'),
@@ -105,7 +107,9 @@ export class TelegramBackupService {
 
     const files: BackupFile[] = [
       ...this.makeFiles(videos, 'videos', 'code'),
+      ...this.makeFiles(videoFiles, 'video-files', 'code'),
       ...this.makeFiles(gallery, 'gallery', 'code'),
+      ...this.makeFiles(historyMedia, 'history-media', 'code'),
       ...this.makeFiles(groups, 'media-groups', 'media_group_id'),
       ...this.makeFiles(pending, 'pending-groups', 'media_group_id'),
       ...this.makeFiles(messages, 'messages', 'message_id'),
@@ -117,7 +121,9 @@ export class TelegramBackupService {
           created_at: new Date().toISOString(),
           counts: {
             videos: videos.length,
+            video_files: videoFiles.length,
             gallery: gallery.length,
+            history_media: historyMedia.length,
             media_groups: groups.length,
             pending_groups: pending.length,
             messages: messages.length,
