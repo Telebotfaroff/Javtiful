@@ -135,6 +135,13 @@ export class TelegramDb {
         CONSTRAINT unique_code_video_file UNIQUE (code, file_id)
       );
 
+      CREATE TABLE IF NOT EXISTS telegram_history_state (
+        channel_id TEXT PRIMARY KEY,
+        next_offset_id BIGINT NOT NULL DEFAULT 0,
+        completed BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS telegram_history_media (
         id SERIAL PRIMARY KEY,
         code TEXT NOT NULL,
@@ -395,6 +402,23 @@ export class TelegramDb {
     );
 
     return (await this.getVideo(normalized))!;
+  }
+
+  static async getHistoryState(channelId: string) {
+    const r = await this.db().query(
+      'SELECT next_offset_id, completed FROM telegram_history_state WHERE channel_id=$1 LIMIT 1',
+      [channelId]
+    );
+    return r.rows[0]
+      ? { nextOffsetId: Number(r.rows[0].next_offset_id), completed: Boolean(r.rows[0].completed) }
+      : { nextOffsetId: 0, completed: false };
+  }
+
+  static async setHistoryState(channelId: string, nextOffsetId: number, completed = false) {
+    await this.db().query(
+      'INSERT INTO telegram_history_state (channel_id, next_offset_id, completed, updated_at) VALUES ($1,$2,$3,NOW()) ON CONFLICT (channel_id) DO UPDATE SET next_offset_id=EXCLUDED.next_offset_id, completed=EXCLUDED.completed, updated_at=NOW()',
+      [channelId, nextOffsetId, completed]
+    );
   }
 
   static async addHistoricalMessage(item: {
