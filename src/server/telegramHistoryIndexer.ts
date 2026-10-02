@@ -77,7 +77,23 @@ export class TelegramHistoryIndexer {
 
       await this.client.connect();
 
-      const channel = await this.client.getEntity(channelId);
+      // Pre-fetch dialogs to populate access hashes for private channels and groups
+      const dialogs = await this.client.getDialogs({ limit: 100 });
+      let channel: any = null;
+
+      // First check dialogs for exact ID match
+      const targetIdStr = String(channelId).replace(/^-100/, '').replace(/^-/, '');
+      const foundDialog = dialogs.find(d => {
+        const dIdStr = String(d.id).replace(/^-100/, '').replace(/^-/, '');
+        return dIdStr === targetIdStr || String(d.id) === String(channelId);
+      });
+
+      if (foundDialog && foundDialog.entity) {
+        channel = foundDialog.entity;
+      } else {
+        channel = await this.client.getEntity(channelId);
+      }
+
       const batchSize = Math.min(Math.max(Number(process.env.TELEGRAM_HISTORY_BATCH_SIZE || 100), 1), 100);
       const delayMs = Math.max(Number(process.env.TELEGRAM_HISTORY_DELAY_MS || 1000), 0);
 
