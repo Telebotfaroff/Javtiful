@@ -85,8 +85,9 @@ export class TelegramHistoryIndexer {
         `Telegram historical indexer started: batches of ${batchSize}, delay ${delayMs}ms`
       );
 
-      let offsetId = 0;
-      let exhausted = false;
+      const savedState = await TelegramDb.getHistoryState(String(channelId));
+      let offsetId = savedState.completed ? 0 : savedState.nextOffsetId;
+      let exhausted = savedState.completed;
 
       while (this.running && !exhausted) {
         const batch: any[] = [];
@@ -119,6 +120,15 @@ export class TelegramHistoryIndexer {
           break;
         }
 
+        const groupCodes = new Map<string, string>();
+        for (const message of batch) {
+          const groupedId = message.groupedId ? String(message.groupedId) : '';
+          const detected = detectJavCode(String(message.message || '').trim());
+          if (groupedId && detected?.canonical) {
+            groupCodes.set(groupedId, detected.canonical);
+          }
+        }
+
         for (const message of batch) {
           if (!this.running) break;
 
@@ -126,7 +136,12 @@ export class TelegramHistoryIndexer {
           this.lastMessageId = Number(message.id || 0);
 
           try {
-            const result = await this.indexHistoricalMessage(message, String(channelId));
+            const groupedId = message.groupedId ? String(message.groupedId) : '';
+            const result = await this.indexHistoricalMessage(
+              message,
+              String(channelId),
+              groupedId ? groupCodes.get(groupedId) : undefined
+            );
             if (result) this.indexed++;
             else this.skipped++;
           } catch (error: any) {
@@ -140,6 +155,7 @@ export class TelegramHistoryIndexer {
         }
 
         offsetId = oldestId;
+        await TelegramDb.setHistoryState(String(channelId), offsetId, false);
 
         console.log(
           `Historical index batch #${this.batches}: ${batch.length} messages processed, next offset ${offsetId}`
@@ -147,6 +163,7 @@ export class TelegramHistoryIndexer {
 
         if (batch.length < batchSize) {
           exhausted = true;
+          await TelegramDb.setHistoryState(String(channelId), offsetId, true);
           break;
         }
 
@@ -183,7 +200,7 @@ export class TelegramHistoryIndexer {
     return { ok: true, message: 'Historical indexer stop requested' };
   }
 
-  private static async indexHistoricalMessage(message: any, channelId: string): Promise<boolean> {
+  private static async indexHistoricalMessage(message: any, channelId: string, groupedCode?: string): Promise<boolean> {
     const messageId = Number(message.id || 0);
     if (!messageId) return false;
 
@@ -191,15 +208,12 @@ export class TelegramHistoryIndexer {
     const mediaGroupId = message.groupedId ? String(message.groupedId) : undefined;
 
     const detected = detectJavCode(caption);
-    const code = detected?.canonical;
+    const code = detected?.canonical || groupedCode;
 
     const media = this.detectMedia(message);
     if (!media) return false;
 
     if (!code) {
-      // We only index messages that have a code. Album members without a
-      // caption/code are intentionally skipped; the message containing the
-      // album caption will be indexed normally.
       return false;
     }
 
