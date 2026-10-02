@@ -372,7 +372,11 @@ export function handleBackendApiRequest(req: IncomingMessage, res: ServerRespons
         sendJson(res, 404, { ok: false, error: 'Gallery item not found' });
         return;
       }
-      const fileId = gallery[idx].file_id;
+      const fileId = gallery[idx]?.file_id;
+      if (!fileId) {
+        sendJson(res, 404, { ok: false, error: 'Gallery item file_id not found' });
+        return;
+      }
       streamTelegramFile(res, fileId);
     }).catch(err => sendJson(res, 500, { ok: false, error: err.message }));
     return true;

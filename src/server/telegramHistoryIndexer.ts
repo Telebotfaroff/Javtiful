@@ -185,7 +185,7 @@ export class TelegramHistoryIndexer {
     } catch (error: any) {
       this.lastError = error?.message || 'Historical indexer failed';
       console.error('Historical indexer failed:', error);
-      return { ok: false, message: this.lastError };
+      return { ok: false, message: this.lastError || 'Historical indexer failed' };
     } finally {
       this.running = false;
       try {
