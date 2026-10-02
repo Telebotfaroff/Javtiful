@@ -66,11 +66,14 @@ async function startServer() {
       });
     }
 
-    // Automatically start Historical Channel Indexer by default (unless explicitly disabled)
+    // Automatically start Historical Channel Indexer only when all required
+    // MTProto credentials and the target channel are configured.
     const historyIndexerDisabled = process.env.TELEGRAM_HISTORY_INDEXER === 'false';
     const hasHistoryCredentials = Boolean(
-      process.env.TELEGRAM_STRING_SESSION || 
-      (process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH)
+      process.env.TELEGRAM_API_ID &&
+      process.env.TELEGRAM_API_HASH &&
+      process.env.TELEGRAM_STRING_SESSION &&
+      process.env.TELEGRAM_CHANNEL_ID
     );
 
     if (!historyIndexerDisabled && hasHistoryCredentials) {
@@ -81,14 +84,6 @@ async function startServer() {
           console.warn(`[AutoPull] Historical indexer startup notice: ${err.message}`);
         });
       }, 2000);
-
-      // Re-run historical scan every 15 minutes to pull any newly posted backlog
-      setInterval(() => {
-        const status = TelegramHistoryIndexer.getStatus();
-        if (!status.active) {
-          TelegramHistoryIndexer.start().catch(() => {});
-        }
-      }, 15 * 60 * 1000);
     }
   });
 }
