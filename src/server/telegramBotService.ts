@@ -165,7 +165,16 @@ export class TelegramBotService {
           `⏱ <b>Duration:</b> ${safeDuration}\n\n` +
           `✨ <i>Delivered instantly by JAVTIFUL Bot</i>`;
 
-        return this.sendVideo(chatId, code, targetPart.file_id, partCaption);
+        if (targetPart.file_id) {
+          return this.sendVideo(chatId, code, targetPart.file_id, partCaption);
+        }
+        return this.copyMessage(
+          chatId,
+          code,
+          tgRecord.telegram.channel_id,
+          targetPart.message_id,
+          partCaption
+        );
       }
 
       // If multiple video parts exist (e.g. 2 or 3 video files for ADN-557):
@@ -193,7 +202,15 @@ export class TelegramBotService {
               `✨ <i>Delivering ${videoFiles.length} video parts for this release...</i>`
             : `🎬 <b>${safeTitle}</b> [${partLabel}]\n🆔 <code>${safeCode}</code>`;
 
-          lastResponse = await this.sendVideo(chatId, code, part.file_id, partCaption);
+          lastResponse = part.file_id
+            ? await this.sendVideo(chatId, code, part.file_id, partCaption)
+            : await this.copyMessage(
+                chatId,
+                code,
+                tgRecord.telegram.channel_id,
+                part.message_id,
+                partCaption
+              );
         }
 
         return lastResponse;
