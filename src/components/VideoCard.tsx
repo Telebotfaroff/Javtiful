@@ -31,16 +31,28 @@ export const VideoCard: React.FC<VideoCardProps> = ({
       onClick={() => onOpenDetails(video)}
       className="group relative flex flex-col overflow-hidden rounded-xl border border-[#1e2433] bg-[#161b26] transition-all duration-200 hover:border-[#ff2a7a]/50 hover:shadow-xl hover:shadow-black/60 cursor-pointer"
     >
-      {/* Thumbnail Container (16:9 / 16:10 ratio) */}
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-900">
+      {/* Thumbnail Container (16:10 ratio with uncropped smart framing) */}
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-950">
         {video.thumb ? (
-          <img
-            src={video.thumb}
-            alt={video.title}
-            referrerPolicy="no-referrer"
-            loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          />
+          <>
+            {/* Blurred ambient background so full container is filled naturally */}
+            <img
+              src={video.thumb}
+              alt=""
+              aria-hidden="true"
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              className="absolute inset-0 h-full w-full object-cover filter blur-md opacity-40 scale-110"
+            />
+            {/* Sharp, uncropped main image */}
+            <img
+              src={video.thumb}
+              alt={video.title}
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              className="relative z-1 h-full w-full object-contain"
+            />
+          </>
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-[#ff2a7a]/15 text-slate-500">
             <div className="text-center p-4">

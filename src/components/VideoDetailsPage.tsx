@@ -104,14 +104,24 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
         </div>
       </div>
 
-      {/* Main High-Resolution Preview Banner (Image based, no fake video player) */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-[#1e2433] bg-black shadow-2xl group">
+      {/* Main High-Resolution Preview Banner (Uncropped, with cinematic ambient glow) */}
+      <div className="relative aspect-video max-h-[520px] w-full overflow-hidden rounded-2xl border border-[#1e2433] bg-black shadow-2xl group flex items-center justify-center">
         {video.thumb ? (
-          <img
-            src={video.thumb}
-            alt={video.title}
-            className="h-full w-full object-cover group-hover:scale-102 transition-transform duration-500"
-          />
+          <>
+            {/* Ambient blurred backdrop to frame any aspect ratio */}
+            <img
+              src={video.thumb}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 h-full w-full object-cover filter blur-xl opacity-35 scale-110"
+            />
+            {/* Sharp, uncropped high-resolution image */}
+            <img
+              src={video.thumb}
+              alt={video.title}
+              className="relative z-1 h-full w-full object-contain"
+            />
+          </>
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-950 via-[#161b26] to-[#ff2a7a]/20">
             <span className="font-mono text-3xl font-bold text-white">{video.code}</span>
@@ -119,7 +129,7 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
         )}
 
         {/* Gradient Scrim */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none z-5" />
 
         {/* Top-Right Expand Fullscreen Preview */}
         {video.thumb && (
@@ -350,15 +360,23 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
           )}
         </div>
 
-        {/* Right Column: Vertical Cover Poster Preview */}
+        {/* Right Column: Vertical Cover Poster Preview (Uncropped) */}
         <div className="lg:col-span-4 space-y-3">
-          <div className="group relative overflow-hidden rounded-2xl border border-[#1e2433] bg-[#161b26] shadow-2xl">
+          <div className="group relative overflow-hidden rounded-2xl border border-[#1e2433] bg-[#161b26] shadow-2xl flex items-center justify-center min-h-[320px]">
             {video.thumb ? (
-              <img
-                src={video.thumb}
-                alt={video.title}
-                className="w-full object-cover transition-transform duration-300 group-hover:scale-102"
-              />
+              <>
+                <img
+                  src={video.thumb}
+                  alt=""
+                  aria-hidden="true"
+                  className="absolute inset-0 h-full w-full object-cover filter blur-lg opacity-30 scale-110"
+                />
+                <img
+                  src={video.thumb}
+                  alt={video.title}
+                  className="relative z-1 w-full max-h-[500px] object-contain"
+                />
+              </>
             ) : (
               <div className="flex aspect-[3/4] w-full items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-[#ff2a7a]/20 text-center p-6">
                 <span className="font-mono text-xl font-bold text-slate-300">{video.code}</span>
@@ -369,17 +387,17 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
               <button
                 onClick={() => onOpenLightbox(video.thumb, 0)}
                 title="Expand cover"
-                className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg bg-black/80 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-xs hover:bg-black transition-colors border border-white/10"
+                className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded-lg bg-black/80 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-xs hover:bg-black transition-colors border border-white/10"
               >
                 <Maximize2 className="h-3.5 w-3.5" />
-                <span>Zoom Poster</span>
+                <span>Full Poster</span>
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Section: Screenshots & Post Gallery */}
+      {/* Section: Screenshots & Post Gallery (Uncropped) */}
       {galleryItems.length > 0 && (
         <section className="space-y-4 pt-6 border-t border-[#1e2433]">
           <div className="flex items-center justify-between">
@@ -402,18 +420,25 @@ export const VideoDetailsPage: React.FC<VideoDetailsPageProps> = ({
               <div
                 key={idx}
                 onClick={() => onOpenLightbox(img, idx)}
-                className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-[#1e2433] bg-[#161b26] cursor-pointer shadow-md hover:border-[#ff2a7a]/50 transition-all hover:scale-102"
+                className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-[#1e2433] bg-black cursor-pointer shadow-md hover:border-[#ff2a7a]/50 transition-all hover:scale-102 flex items-center justify-center"
               >
                 <img
                   src={img}
-                  alt={`Screenshot ${idx + 1}`}
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  alt=""
+                  aria-hidden="true"
+                  className="absolute inset-0 h-full w-full object-cover filter blur-xs opacity-35 scale-110"
                   loading="lazy"
                 />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <img
+                  src={img}
+                  alt={`Screenshot ${idx + 1}`}
+                  className="relative z-1 h-full w-full object-contain"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
                   <Maximize2 className="h-5 w-5 text-white" />
                 </div>
-                <div className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono text-slate-300 border border-white/10">
+                <div className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono text-slate-300 border border-white/10 z-10">
                   #{idx + 1}
                 </div>
               </div>

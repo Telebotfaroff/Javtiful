@@ -35,17 +35,25 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
       {/* Content Grid */}
       <div className="relative z-10 p-6 sm:p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center gap-6 sm:gap-8">
-        {/* Cover Preview Card */}
+        {/* Cover Preview Card (Uncropped) */}
         <div
           onClick={() => onOpenDetails(video)}
-          className="group/thumb relative aspect-[16/10] sm:aspect-[3/4] w-full md:w-56 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-2xl transition-all duration-300 hover:scale-102 hover:border-[#ff2a7a]/50"
+          className="group/thumb relative aspect-[16/10] sm:aspect-[3/4] w-full md:w-56 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-slate-950 shadow-2xl transition-all duration-300 hover:scale-102 hover:border-[#ff2a7a]/50 flex items-center justify-center"
         >
           {video.thumb ? (
-            <img
-              src={video.thumb}
-              alt={video.title}
-              className="h-full w-full object-cover"
-            />
+            <>
+              <img
+                src={video.thumb}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover filter blur-md opacity-35 scale-110"
+              />
+              <img
+                src={video.thumb}
+                alt={video.title}
+                className="relative z-1 h-full w-full object-contain"
+              />
+            </>
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-[#ff2a7a]/20 text-center p-4">
               <span className="font-mono text-base font-bold text-slate-300">{video.code}</span>
