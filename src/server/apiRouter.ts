@@ -58,6 +58,7 @@ async function toVideoRecord(tg: any): Promise<VideoRecord | null> {
 
   return {
     code: tg.code,
+    media_type: tg.telegram?.media_type || (tg.telegram?.videos?.length ? 'video' : (tg.telegram?.gallery?.length ? 'image' : 'video')),
     title: metadata?.title || `Release ${tg.code}`,
     url: metadata?.url,
     thumb: metadata?.thumb || gallery[0] || '',
