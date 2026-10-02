@@ -633,17 +633,14 @@ export class TelegramDb {
     const allGallery = gallery.length > 0 ? gallery : historyGallery;
     const hasVideos = allVideos.length > 0 || Boolean(row.video_file_id);
     const hasGallery = allGallery.length > 0;
-    const hasGallery = gallery.length > 0;
     const mediaType: 'image' | 'video' | 'mixed' =
-      row.media_type === 'image' || row.media_type === 'mixed'
-        ? row.media_type
-        : (hasVideos && hasGallery)
+      (hasVideos && hasGallery)
         ? 'mixed'
         : hasVideos
         ? 'video'
         : hasGallery
         ? 'image'
-        : 'video';
+        : (row.media_type || 'video');
 
     return {
       code: String(row.code),
