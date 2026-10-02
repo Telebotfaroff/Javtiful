@@ -1,7 +1,7 @@
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { TelegramClient } from 'telegram';
-import { StringSession } from 'telegram/sessions';
+import { TelegramClient } from 'teleproto';
+import { StringSession } from 'teleproto/sessions';
 
 const rl = readline.createInterface({ input, output });
 
