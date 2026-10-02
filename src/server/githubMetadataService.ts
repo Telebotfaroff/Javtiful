@@ -86,7 +86,7 @@ export class GithubMetadataService {
   }
 
   /**
-   * Fetch shard JSON from GitHub with in-memory caching and TTL
+   * Fetch shard JSON from GitHub with in-memory caching, CDN fallback, and TTL
    */
   static async fetchShard(prefix: string): Promise<{ shard: GithubShard | null; cached: boolean }> {
     const cleanPrefix = prefix.toUpperCase();
@@ -107,84 +107,46 @@ export class GithubMetadataService {
       return { shard: null, cached: false };
     }
 
-    const shardUrl = `${this.REPO_BASE}/${encodeURIComponent(sanitizedPrefix)}/videos.json`;
-
-    try {
-      const jsonText = await new Promise<string>((resolve, reject) => {
-        const req = https
-          .get(
-            shardUrl,
-            {
-              headers: {
-                'User-Agent': 'JAVTIFUL-Catalog-Backend/1.0',
-                Accept: 'application/json',
-              },
-            },
-            (res) => {
-              if (res.statusCode === 404) {
-                // Not found
-                resolve('');
-                return;
-              }
-              if (res.statusCode === 429 || res.statusCode === 403) {
-                console.warn(`GitHub rate limit hit (HTTP ${res.statusCode}) for prefix ${sanitizedPrefix}`);
-                resolve('');
-                return;
-              }
-              if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                // Follow redirect
-                const redirReq = https.get(res.headers.location, (redirRes) => {
-                  let d = '';
-                  redirRes.on('data', (c) => (d += c));
-                  redirRes.on('end', () => resolve(d));
-                });
-                redirReq.setTimeout(6000, () => {
-                  redirReq.destroy(new Error('Redirect request timed out'));
-                });
-                redirReq.on('error', reject);
-                return;
-              }
-              if (res.statusCode !== 200) {
-                console.warn(`GitHub returned HTTP ${res.statusCode} for prefix ${sanitizedPrefix}`);
-                resolve('');
-                return;
-              }
-              let data = '';
-              res.on('data', (chunk) => (data += chunk));
-              res.on('end', () => resolve(data));
-            }
-          );
-
-        req.setTimeout(6000, () => {
-          req.destroy(new Error('GitHub connection timed out (6000ms)'));
-        });
-        req.on('error', (err) => {
-          console.warn(`GitHub network warning for prefix ${sanitizedPrefix}: ${err.message}`);
-          resolve('');
-        });
-      });
-
-      if (!jsonText.trim()) {
-        // Shard not found or rate-limited; negative cache
-        SHARD_CACHE.set(sanitizedPrefix, { timestamp: now, shard: null });
-        return { shard: null, cached: false };
-      }
-
-      let parsed: GithubShard;
-      try {
-        parsed = JSON.parse(jsonText);
-      } catch (parseErr: any) {
-        console.warn(`Malformed JSON in shard for prefix ${sanitizedPrefix}: ${parseErr.message}`);
-        SHARD_CACHE.set(sanitizedPrefix, { timestamp: now, shard: null });
-        return { shard: null, cached: false };
-      }
-
-      SHARD_CACHE.set(sanitizedPrefix, { timestamp: now, shard: parsed });
-      return { shard: parsed, cached: false };
-    } catch (e: any) {
-      console.warn(`Resilient recovery for prefix ${sanitizedPrefix}:`, e.message);
-      return { shard: null, cached: false };
+    const githubToken = process.env.GITHUB_TOKEN || process.env.TELEGRAM_INDEX_GITHUB_TOKEN;
+    const headers: Record<string, string> = {
+      'User-Agent': 'JAVTIFUL-Catalog-Backend/1.0',
+      Accept: 'application/json',
+    };
+    if (githubToken) {
+      headers['Authorization'] = `token ${githubToken}`;
     }
+
+    const urls = [
+      `${this.REPO_BASE}/${encodeURIComponent(sanitizedPrefix)}/videos.json`,
+      `https://cdn.jsdelivr.net/gh/Telebotfaroff/javtiful-scraper@main/database/code/${encodeURIComponent(sanitizedPrefix)}/videos.json`,
+    ];
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, {
+          headers,
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (res.status === 404) {
+          // Shard does not exist in repository database
+          SHARD_CACHE.set(sanitizedPrefix, { timestamp: now, shard: null });
+          return { shard: null, cached: false };
+        }
+
+        if (res.ok) {
+          const parsed = (await res.json()) as GithubShard;
+          SHARD_CACHE.set(sanitizedPrefix, { timestamp: now, shard: parsed });
+          return { shard: parsed, cached: false };
+        }
+      } catch (err: any) {
+        // Continue to CDN fallback on network timeout
+      }
+    }
+
+    // Negative cache to prevent hammering on unknown/unscraped prefixes
+    SHARD_CACHE.set(sanitizedPrefix, { timestamp: now, shard: null });
+    return { shard: null, cached: false };
   }
 
   /**
