@@ -44,21 +44,25 @@ export class TelegramPollingService {
       return { ok: true, message: 'Long polling is already active' };
     }
 
-    // Long polling and webhooks are mutually exclusive. Always clear any old webhook first.
     this.isRunning = true;
     this.abortController = new AbortController();
 
-    // 1. Clear any active webhook so Telegram routes updates to getUpdates
+    // 1. Clear any active webhook with retry so Telegram routes updates to getUpdates
     try {
-      await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=false`);
-      console.log('Telegram webhook removed. Initiating long-polling listener...');
+      const deleteRes = await fetch(
+        `https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=false`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (deleteRes.ok) {
+        console.log('Telegram webhook cleared. Initializing long-polling listener...');
+      }
     } catch (e: any) {
-      console.warn('Failed to delete webhook prior to polling:', e.message);
+      console.warn('Notice: Non-critical webhook cleanup prior to polling:', e.message);
     }
 
-    // 2. Start asynchronous polling loop in background
+    // 2. Start continuous polling loop in background
     this.pollLoop(token).catch(err => {
-      console.error('Fatal long-polling loop error:', err);
+      console.error('Long-polling loop encountered critical stop:', err);
       this.isRunning = false;
     });
 
@@ -81,20 +85,44 @@ export class TelegramPollingService {
   }
 
   /**
-   * Continuous background getUpdates loop
+   * Continuous background getUpdates loop with robust timeout and auto-reconnect
    */
   private static async pollLoop(token: string): Promise<void> {
     while (this.isRunning) {
       this.lastPollTime = new Date().toISOString();
+      const currentAbort = new AbortController();
+
+      // Listen for parent abort
+      const parentAbortHandler = () => currentAbort.abort();
+      this.abortController?.signal.addEventListener('abort', parentAbortHandler);
+
+      // Auto-abort individual request after 30s (timeout=15s on Telegram side + 15s network buffer)
+      const timeoutId = setTimeout(() => {
+        currentAbort.abort();
+      }, 30000);
+
       try {
         const allowedUpdates = encodeURIComponent(JSON.stringify(['message', 'channel_post']));
-        const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${this.offset}&timeout=20&allowed_updates=${allowedUpdates}`;
+        const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${this.offset}&timeout=15&allowed_updates=${allowedUpdates}`;
+        
         const res = await fetch(url, {
-          signal: this.abortController?.signal,
+          signal: currentAbort.signal,
+          headers: {
+            'Connection': 'keep-alive',
+          },
         });
 
+        clearTimeout(timeoutId);
+        this.abortController?.signal.removeEventListener('abort', parentAbortHandler);
+
         if (!res.ok) {
-          throw new Error(`Telegram API responded with HTTP ${res.status}`);
+          if (res.status === 409) {
+            // Another instance or webhook is active - back off
+            console.warn('Telegram polling: 409 Conflict (another instance or webhook active). Retrying in 5s...');
+            await new Promise(r => setTimeout(r, 5000));
+            continue;
+          }
+          throw new Error(`Telegram API returned HTTP ${res.status}`);
         }
 
         const data: any = await res.json();
@@ -120,16 +148,28 @@ export class TelegramPollingService {
           }
         }
       } catch (err: any) {
-        if (err.name === 'AbortError' || !this.isRunning) {
+        clearTimeout(timeoutId);
+        this.abortController?.signal.removeEventListener('abort', parentAbortHandler);
+
+        if (!this.isRunning) {
           break;
         }
-        this.consecutiveErrors++;
-        this.lastError = err.message || 'Unknown network error';
-        console.warn(`Telegram polling error (${this.consecutiveErrors}):`, this.lastError);
 
-        // Exponential backoff up to 10 seconds on error
-        const delay = Math.min(1000 * Math.pow(2, this.consecutiveErrors - 1), 10000);
-        await new Promise(r => setTimeout(r, delay));
+        const isAbort = err.name === 'AbortError';
+        const isTransientFetch = err.message?.includes('fetch failed') || err.code === 'UND_ERR_SOCKET' || isAbort;
+
+        this.consecutiveErrors++;
+        this.lastError = err.message || 'Transient network reconnect';
+
+        if (isTransientFetch) {
+          // Transient network cycle / socket refresh - seamlessly reconnect after small delay
+          const delay = Math.min(1000 + (this.consecutiveErrors * 500), 5000);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          console.warn(`Telegram polling notification (${this.consecutiveErrors}):`, err.message);
+          const delay = Math.min(2000 * Math.pow(1.5, this.consecutiveErrors - 1), 10000);
+          await new Promise(r => setTimeout(r, delay));
+        }
       }
     }
   }

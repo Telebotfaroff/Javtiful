@@ -314,6 +314,7 @@ export class TelegramBotService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, video: videoFileId, caption, parse_mode: 'HTML' }),
+        signal: AbortSignal.timeout(20000),
       });
       const result: any = await response.json();
       if (!response.ok || !result.ok) {
@@ -337,6 +338,7 @@ export class TelegramBotService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, from_chat_id: fromChatId, message_id: messageId, caption, parse_mode: 'HTML' }),
+        signal: AbortSignal.timeout(20000),
       });
       const result: any = await response.json();
       if (!response.ok || !result.ok) {
@@ -358,6 +360,7 @@ export class TelegramBotService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+        signal: AbortSignal.timeout(15000),
       });
       const result: any = await response.json();
       if (!response.ok || !result.ok) {
