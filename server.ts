@@ -9,6 +9,7 @@ import { handleBackendApiRequest } from './src/server/apiRouter.ts';
 
 import { TelegramPollingService } from './src/server/telegramPollingService.ts';
 import { TelegramDb } from './src/server/telegramDb.ts';
+import { TelegramHistoryIndexer } from './src/server/telegramHistoryIndexer.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,6 +64,17 @@ async function startServer() {
       }).catch(err => {
         console.warn(`Failed to initialize Telegram Long Polling: ${err.message}`);
       });
+
+      // Historical indexer runs automatically in batches of 100 when enabled.
+      if (process.env.TELEGRAM_HISTORY_INDEXER === 'true') {
+        setTimeout(() => {
+          TelegramHistoryIndexer.start().then(r => {
+            console.log(`Telegram historical indexer: ${r.message}`);
+          }).catch(err => {
+            console.warn(`Failed to start historical Telegram indexer: ${err.message}`);
+          });
+        }, 3000);
+      }
     }
   });
 }
