@@ -16,6 +16,9 @@ export const VideoCard: React.FC<VideoCardProps> = ({
   const telegramDeepLink = `https://t.me/${botUsername}?start=${encodeURIComponent(video.code)}`;
   const videoPartsCount = video.telegram?.videos?.length || 0;
   const galleryCount = video.gallery?.length || 0;
+  const mediaType = video.media_type || (video.telegram?.videos?.length ? 'video' : galleryCount > 0 ? 'image' : 'video');
+  const isImageOnly = mediaType === 'image';
+  const isMixed = mediaType === 'mixed';
 
   return (
     <article
@@ -49,7 +52,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           <div className="rounded-md bg-black/80 px-2 py-0.5 text-xs font-mono font-bold text-white border border-white/10 backdrop-blur-xs">
             {video.code}
           </div>
-          {videoPartsCount > 1 && (
+          {!isImageOnly && videoPartsCount > 1 && (
             <div className="flex items-center gap-1 rounded-md bg-rose-600/90 px-1.5 py-0.5 text-[10px] font-bold text-white border border-rose-400/30 backdrop-blur-xs shadow-sm">
               <Layers className="h-2.5 w-2.5" />
               <span>{videoPartsCount} Parts</span>
@@ -65,10 +68,12 @@ export const VideoCard: React.FC<VideoCardProps> = ({
               <span>{galleryCount}</span>
             </div>
           )}
-          <div className="flex items-center gap-1 rounded bg-black/80 px-2 py-0.5 text-[11px] font-mono text-slate-200 backdrop-blur-xs">
-            <Clock className="h-3 w-3 text-slate-400" />
-            <span>{video.duration}</span>
-          </div>
+          {!isImageOnly && (
+            <div className="flex items-center gap-1 rounded bg-black/80 px-2 py-0.5 text-[11px] font-mono text-slate-200 backdrop-blur-xs">
+              <Clock className="h-3 w-3 text-slate-400" />
+              <span>{video.duration}</span>
+            </div>
+          )}
         </div>
 
         {/* Hover Quick Actions */}
@@ -126,7 +131,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           </span>
 
           <span className="text-[10px] uppercase font-semibold text-rose-400/80">
-            Telegram Link
+            {isMixed ? 'Media' : isImageOnly ? 'Gallery' : 'Video'}
           </span>
         </div>
       </div>
