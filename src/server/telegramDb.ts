@@ -21,6 +21,7 @@ export interface TelegramVideoFile {
 }
 
 export interface TelegramMediaRecord {
+  media_type?: 'image' | 'video' | 'mixed';
   channel_id: string;
   message_id: number;
   video_file_id?: string;
@@ -100,6 +101,7 @@ export class TelegramDb {
         height INT,
         file_size BIGINT,
         mime_type TEXT,
+        media_type TEXT NOT NULL DEFAULT 'video',
         media_group_id TEXT,
         indexed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -143,6 +145,8 @@ export class TelegramDb {
 
       CREATE UNIQUE INDEX IF NOT EXISTS idx_tg_gallery_code_file ON telegram_gallery (code, file_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_tg_video_files_code_file ON telegram_video_files (code, file_id);
+
+      ALTER TABLE telegram_videos ADD COLUMN IF NOT EXISTS media_type TEXT NOT NULL DEFAULT 'video';
 
       -- Safe column additions if table existed before
       DO $$
@@ -483,7 +487,7 @@ export class TelegramDb {
   static async getVideo(code: string): Promise<TelegramVideoIndexRecord | null> {
     const normalized = this.normalizeCode(code);
     const r = await this.db().query(
-      'SELECT code,channel_id,message_id,video_file_id,file_unique_id,duration,width,height,file_size,mime_type,media_group_id,indexed_at,updated_at FROM telegram_videos WHERE code=$1 LIMIT 1',
+      'SELECT code,channel_id,message_id,video_file_id,file_unique_id,duration,width,height,file_size,mime_type,media_type,media_group_id,indexed_at,updated_at FROM telegram_videos WHERE code=$1 LIMIT 1',
       [normalized]
     );
     if (!r.rows[0]) return null;
@@ -524,6 +528,7 @@ export class TelegramDb {
     return {
       code: String(row.code),
       telegram: {
+        media_type: mediaType,
         channel_id: String(row.channel_id),
         message_id: Number(row.message_id),
         video_file_id: row.video_file_id || (videoFiles[0]?.file_id) || undefined,
