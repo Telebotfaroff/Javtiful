@@ -525,6 +525,19 @@ export class TelegramDb {
       label: x.label || (vRes.rows.length > 1 ? `Part ${idx + 1}` : undefined),
     }));
 
+    const hasVideos = videoFiles.length > 0 || Boolean(row.video_file_id);
+    const hasGallery = gallery.length > 0;
+    const mediaType: 'image' | 'video' | 'mixed' =
+      row.media_type === 'image' || row.media_type === 'mixed'
+        ? row.media_type
+        : (hasVideos && hasGallery)
+        ? 'mixed'
+        : hasVideos
+        ? 'video'
+        : hasGallery
+        ? 'image'
+        : 'video';
+
     return {
       code: String(row.code),
       telegram: {
