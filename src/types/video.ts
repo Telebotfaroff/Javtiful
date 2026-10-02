@@ -11,6 +11,7 @@ export interface TelegramVideoPart {
 }
 
 export interface VideoRecord {
+  media_type?: 'image' | 'video' | 'mixed';
   code: string;           // Canonical JAV code (e.g. ADN-557, 016DHT-0881, SSIS-892)
   title: string;          // Video title
   url?: string;           // javtiful.com video URL
