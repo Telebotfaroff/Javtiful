@@ -35,7 +35,8 @@ export default function App() {
   const [studiosList, setStudiosList] = useState<{ name: string; count: number }[]>([]);
   const [genresList, setGenresList] = useState<string[]>([]);
 
-  // Filters & Sorting
+  // Navigation Tabs & Filters
+  const [activeTab, setActiveTab] = useState('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedActress, setSelectedActress] = useState<string | null>(null);
   const [selectedStudio, setSelectedStudio] = useState<string | null>(null);
@@ -176,6 +177,7 @@ export default function App() {
   }, []);
 
   const handleResetFilters = useCallback(() => {
+    setActiveTab('home');
     setSearchQuery('');
     setSelectedActress(null);
     setSelectedStudio(null);
@@ -185,6 +187,20 @@ export default function App() {
     setSelectedVideo(null);
     window.location.hash = '';
   }, []);
+
+  const handleSelectTab = (tab: string) => {
+    setActiveTab(tab);
+    setSelectedVideo(null);
+    window.location.hash = '';
+    if (tab === 'popular') {
+      setSortOption('duration');
+    } else if (tab === 'latest') {
+      setSortOption('newest');
+    } else {
+      setSortOption('newest');
+    }
+    setCurrentPage(1);
+  };
 
   // Lightbox handlers
   const handleOpenLightbox = (imageUrl: string, index: number) => {
@@ -204,7 +220,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] selection:bg-rose-600 selection:text-white">
+    <div className="min-h-screen bg-[#0d111a] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] selection:bg-[#ff2a7a] selection:text-white">
       {/* Global Navigation Bar */}
       <Navbar
         searchQuery={searchQuery}
@@ -229,16 +245,18 @@ export default function App() {
         onOpenStudiosList={() => setIsStudiosOpen(true)}
         onOpenGenresList={() => setIsGenresOpen(true)}
         onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+        activeTab={activeTab}
+        onSelectTab={handleSelectTab}
         botUsername={botUsername}
       />
 
       {/* Main Content Viewport */}
       <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         {selectedVideo ? (
-          /* View 1: Dedicated Video Details Page (Section 13) */
+          /* View 1: Dedicated Video Details Page */
           isDetailsLoading ? (
             <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-              <Loader2 className="h-8 w-8 animate-spin text-rose-500 mb-3" />
+              <Loader2 className="h-8 w-8 animate-spin text-[#ff2a7a] mb-3" />
               <span className="text-xs">Loading video details from API...</span>
             </div>
           ) : (
@@ -266,8 +284,8 @@ export default function App() {
         ) : (
           /* View 2: Video Catalog Grid & Featured Hero */
           <>
-            {/* Show Featured Spotlight when no active search/filters */}
-            {!searchQuery && !selectedActress && !selectedStudio && !selectedGenre && featuredVideo && (
+            {/* Show Featured Spotlight when on Home tab and no active search/filters */}
+            {activeTab === 'home' && !searchQuery && !selectedActress && !selectedStudio && !selectedGenre && featuredVideo && (
               <HeroBanner
                 video={featuredVideo}
                 onOpenDetails={handleOpenDetails}
@@ -301,11 +319,11 @@ export default function App() {
             {/* Video Cards Grid with Loading Indicator */}
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                <Loader2 className="h-8 w-8 animate-spin text-rose-500 mb-3" />
+                <Loader2 className="h-8 w-8 animate-spin text-[#ff2a7a] mb-3" />
                 <span className="text-xs">Fetching catalog records from backend API...</span>
               </div>
             ) : videos.length > 0 ? (
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {videos.map((video) => (
                   <VideoCard
                     key={video.code}
@@ -317,17 +335,17 @@ export default function App() {
               </div>
             ) : (
               /* Empty Search Results */
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-[#1f293d] bg-[#111827] py-16 px-6 text-center">
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-[#1e2433] bg-[#161b26] py-16 px-6 text-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 text-slate-400 mb-4">
                   <Film className="h-6 w-6" />
                 </div>
-                <h3 className="text-base font-semibold text-white">No Videos Found</h3>
+                <h3 className="text-base font-semibold text-white">No Releases Found</h3>
                 <p className="mt-1 text-xs text-slate-400 max-w-md">
-                  No video records matched your current query or filters on the backend. Check the JAV code formatting (e.g. <code className="font-mono text-rose-300">016DHT-0881</code>) or reset filters.
+                  No video records found matching your criteria. Check the code formatting (e.g. <code className="font-mono text-pink-400">016DHT-0881</code>) or reset your active filters.
                 </p>
                 <button
                   onClick={handleResetFilters}
-                  className="mt-5 flex items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500 transition-colors"
+                  className="mt-5 flex items-center gap-1.5 rounded-xl bg-[#ff2a7a] hover:bg-[#ff1a70] px-4 py-2.5 text-xs font-semibold text-white transition-colors shadow-md shadow-[#ff2a7a]/25"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   <span>Reset All Filters</span>
@@ -350,7 +368,7 @@ export default function App() {
         )}
       </main>
 
-      {/* English-Only Footer */}
+      {/* Footer matching reference theme */}
       <Footer
         botUsername={botUsername}
         onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
