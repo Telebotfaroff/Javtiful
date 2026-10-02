@@ -12,7 +12,6 @@ import { Pagination } from './components/Pagination.tsx';
 import { VideoDetailsPage } from './components/VideoDetailsPage.tsx';
 import { GalleryLightbox } from './components/GalleryLightbox.tsx';
 import { ActressesModal, StudiosModal, GenresModal } from './components/BrowseModals.tsx';
-import { DiagnosticsModal } from './components/DiagnosticsModal.tsx';
 import { Footer } from './components/Footer.tsx';
 import { VideoApiService } from './services/videoApi.ts';
 import type { VideoRecord, SortOption } from './types/video.ts';
@@ -28,7 +27,6 @@ export default function App() {
   const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
-  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
 
   // Metadata Lists from Backend API
   const [actressesList, setActressesList] = useState<{ name: string; count: number }[]>([]);
@@ -244,7 +242,6 @@ export default function App() {
         onOpenActressesList={() => setIsActressesOpen(true)}
         onOpenStudiosList={() => setIsStudiosOpen(true)}
         onOpenGenresList={() => setIsGenresOpen(true)}
-        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         botUsername={botUsername}
@@ -369,10 +366,7 @@ export default function App() {
       </main>
 
       {/* Footer matching reference theme */}
-      <Footer
-        botUsername={botUsername}
-        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
-      />
+      <Footer botUsername={botUsername} />
 
       {/* Screenshot & Cover Fullscreen Lightbox */}
       <GalleryLightbox
@@ -416,12 +410,6 @@ export default function App() {
           setSelectedVideo(null);
           setCurrentPage(1);
         }}
-      />
-
-      {/* System Status & Diagnostics Modal */}
-      <DiagnosticsModal
-        isOpen={isDiagnosticsOpen}
-        onClose={() => setIsDiagnosticsOpen(false)}
       />
     </div>
   );

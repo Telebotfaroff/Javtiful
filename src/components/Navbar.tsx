@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Film, Users, Building2, Tag, Menu, X, Send, Sparkles, Activity, Flame } from 'lucide-react';
+import { Search, Film, Users, Building2, Tag, Menu, X, Send, Sparkles, Flame } from 'lucide-react';
 
 interface NavbarProps {
   searchQuery: string;
@@ -11,7 +11,6 @@ interface NavbarProps {
   onOpenActressesList: () => void;
   onOpenStudiosList: () => void;
   onOpenGenresList: () => void;
-  onOpenDiagnostics?: () => void;
   activeTab?: string;
   onSelectTab?: (tab: string) => void;
   botUsername?: string;
@@ -24,7 +23,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenActressesList,
   onOpenStudiosList,
   onOpenGenresList,
-  onOpenDiagnostics,
   activeTab = 'home',
   onSelectTab,
   botUsername = 'JavtifulBot',
@@ -164,34 +162,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </form>
 
-        {/* Actions & Telegram Delivery Bot Button */}
-        <div className="flex items-center gap-2.5">
-          {onOpenDiagnostics && (
-            <button
-              onClick={onOpenDiagnostics}
-              title="System Status"
-              className="flex items-center gap-1.5 rounded-xl bg-[#161b26] border border-[#1e2433] px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-700 transition-colors"
-            >
-              <Activity className="h-3.5 w-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Status</span>
-            </button>
-          )}
-
-          <a
-            href={`https://t.me/${botUsername}`}
-            target="_blank"
-            rel="noreferrer"
-            title="Telegram Video Delivery Bot"
-            className="flex items-center gap-2 rounded-xl bg-[#0088CC]/15 border border-[#0088CC]/35 px-3 py-1.5 text-xs font-semibold text-[#38bdf8] hover:bg-[#0088CC]/25 transition-colors"
-          >
-            <Send className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Telegram Bot</span>
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-            </span>
-          </a>
-
+        {/* Mobile menu trigger */}
+        <div className="flex items-center gap-2">
           {/* Mobile hamburger */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

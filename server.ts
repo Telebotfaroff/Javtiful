@@ -57,24 +57,38 @@ async function startServer() {
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT} (${isProd ? 'production' : 'development'})`);
     
-    // Automatically start Telegram Long-Polling if bot token is present
+    // Automatically start Telegram Bot Long-Polling by default
     if (process.env.TELEGRAM_BOT_TOKEN) {
       TelegramPollingService.start().then(r => {
-        console.log(`Telegram Bot Long Polling initialized: ${r.message}`);
+        console.log(`[AutoPull] Telegram Bot Long Polling active: ${r.message}`);
       }).catch(err => {
-        console.warn(`Failed to initialize Telegram Long Polling: ${err.message}`);
+        console.warn(`[AutoPull] Polling init notice: ${err.message}`);
       });
+    }
 
-      // Historical indexer runs automatically in batches of 100 when enabled.
-      if (process.env.TELEGRAM_HISTORY_INDEXER === 'true') {
-        setTimeout(() => {
-          TelegramHistoryIndexer.start().then(r => {
-            console.log(`Telegram historical indexer: ${r.message}`);
-          }).catch(err => {
-            console.warn(`Failed to start historical Telegram indexer: ${err.message}`);
-          });
-        }, 3000);
-      }
+    // Automatically start Historical Channel Indexer by default (unless explicitly disabled)
+    const historyIndexerDisabled = process.env.TELEGRAM_HISTORY_INDEXER === 'false';
+    const hasHistoryCredentials = Boolean(
+      process.env.TELEGRAM_STRING_SESSION || 
+      (process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH)
+    );
+
+    if (!historyIndexerDisabled && hasHistoryCredentials) {
+      setTimeout(() => {
+        TelegramHistoryIndexer.start().then(r => {
+          console.log(`[AutoPull] Historical Telegram indexer auto-started: ${r.message}`);
+        }).catch(err => {
+          console.warn(`[AutoPull] Historical indexer startup notice: ${err.message}`);
+        });
+      }, 2000);
+
+      // Re-run historical scan every 15 minutes to pull any newly posted backlog
+      setInterval(() => {
+        const status = TelegramHistoryIndexer.getStatus();
+        if (!status.active) {
+          TelegramHistoryIndexer.start().catch(() => {});
+        }
+      }, 15 * 60 * 1000);
     }
   });
 }
