@@ -56,17 +56,17 @@ export class TelegramBotService {
         const result = await TelegramBackupService.backup();
         return this.sendMessage(
           chatId,
-          '✅ <b>Backup completed</b>\\n\\n' +
-          '• Videos: ' + result.videos + '\\n' +
-          '• Gallery items: ' + result.gallery + '\\n' +
-          '• Backup files: ' + result.files + '\\n' +
+          '✅ <b>Backup completed</b>\n\n' +
+          '• Videos: ' + result.videos + '\n' +
+          '• Gallery items: ' + result.gallery + '\n' +
+          '• Backup files: ' + result.files + '\n' +
           '• Commit: <code>' + escapeHtml(result.commit.slice(0, 12)) + '</code>'
         );
       } catch (e: any) {
         console.error('Telegram index backup failed:', e);
         return this.sendMessage(
           chatId,
-          '❌ <b>Backup failed</b>\\n\\n' + escapeHtml(e?.message || 'Unknown backup error')
+          '❌ <b>Backup failed</b>\n\n' + escapeHtml(e?.message || 'Unknown backup error')
         );
       }
     }
@@ -99,7 +99,7 @@ export class TelegramBotService {
     return this.sendMessage(
       chatId,
       `👋 <b>Welcome to the JAVTIFUL Media Bot!</b>\n\n` +
-      `To request a valid JAV code (e.g. <code>016DHT-0881</code>) or click <b>GET VIDEO</b> on our web catalog.\n\n` +
+      `To request a video, send a valid JAV code (e.g. <code>ADN-557</code> or <code>016DHT-0881</code>) or click <b>GET VIDEO</b> on our web catalog.\n\n` +
       `Commands:\n` +
       `• /start - Welcome menu\n` +
       `• /help - Bot usage instructions\n` +
@@ -109,16 +109,24 @@ export class TelegramBotService {
   }
 
   /**
-   * Handle /start with JAV code: /start ABC-123
+   * Handle /start with JAV code: /start ABC-123 or /start ABC-123_part2
    */
-  static async handleStartWithCode(chatId: number | string, rawCode: string): Promise<BotActionResponse> {
-    const detected = detectJavCode(rawCode);
-    const code = detected ? detected.canonical : rawCode.trim().toUpperCase();
+  static async handleStartWithCode(chatId: number | string, rawInput: string): Promise<BotActionResponse> {
+    // Check if a specific part index is requested (e.g., ADN-557_part2 or ADN-557-part-2)
+    let requestedPartIndex: number | null = null;
+    const partMatch = rawInput.match(/[_-]part[_-]?([0-9]+)/i) || rawInput.match(/[_-]p([0-9]+)$/i);
+    if (partMatch) {
+      requestedPartIndex = parseInt(partMatch[1], 10);
+    }
 
-    // 1. Look up in Telegram JSON Database (Section 14 & 6)
+    const cleanedCodeString = rawInput.replace(/[_-]part[_-]?[0-9]+/i, '').replace(/[_-]p[0-9]+$/i, '');
+    const detected = detectJavCode(cleanedCodeString);
+    const code = detected ? detected.canonical : cleanedCodeString.trim().toUpperCase();
+
+    // 1. Look up in Telegram Database
     const tgRecord = await TelegramDb.getVideo(code);
 
-    // 2. Fetch authoritative metadata from GitHub scraper (Requirement 4)
+    // 2. Fetch authoritative metadata from GitHub scraper
     let metadata: any = null;
     let metadataFound = false;
 
@@ -132,8 +140,11 @@ export class TelegramBotService {
       console.warn(`GitHub metadata lookup error for ${code}:`, e.message);
     }
 
-    // CASE 1: Video exists in Telegram JSON database
-    if (tgRecord && tgRecord.telegram && (tgRecord.telegram.video_file_id || tgRecord.telegram.message_id)) {
+    // CASE 1: Video exists in Telegram database
+    const videoFiles = tgRecord?.telegram?.videos || [];
+    const hasSingleVideo = Boolean(tgRecord?.telegram?.video_file_id || tgRecord?.telegram?.message_id);
+
+    if (tgRecord && tgRecord.telegram && (videoFiles.length > 0 || hasSingleVideo)) {
       const safeTitle = escapeHtml(metadata?.title || `Release ${code}`);
       const safeActress = metadata?.actresses && metadata.actresses.length > 0
         ? escapeHtml(metadata.actresses.join(', '))
@@ -142,6 +153,54 @@ export class TelegramBotService {
       const safeDuration = escapeHtml(metadata?.duration || 'N/A');
       const safeDate = escapeHtml(metadata?.date || 'N/A');
       const safeCode = escapeHtml(code);
+
+      // If user requested a specific part and multiple parts exist
+      if (requestedPartIndex !== null && videoFiles.length >= requestedPartIndex && requestedPartIndex > 0) {
+        const targetPart = videoFiles[requestedPartIndex - 1];
+        const partCaption =
+          `🎬 <b>${safeTitle}</b> [Part ${requestedPartIndex}/${videoFiles.length}]\n\n` +
+          `🆔 <b>Code:</b> <code>${safeCode}</code>\n` +
+          `👩 <b>Actress:</b> ${safeActress}\n` +
+          `🏢 <b>Studio:</b> ${safeStudio}\n` +
+          `⏱ <b>Duration:</b> ${safeDuration}\n\n` +
+          `✨ <i>Delivered instantly by JAVTIFUL Bot</i>`;
+
+        return this.sendVideo(chatId, code, targetPart.file_id, partCaption);
+      }
+
+      // If multiple video parts exist (e.g. 2 or 3 video files for ADN-557):
+      if (videoFiles.length > 1) {
+        // Deliver all video parts sequentially
+        let lastResponse: BotActionResponse = {
+          ok: true,
+          action: 'sendVideo',
+          chat_id: chatId,
+          code,
+        };
+
+        for (let i = 0; i < videoFiles.length; i++) {
+          const part = videoFiles[i];
+          const partLabel = part.label || `Part ${i + 1}/${videoFiles.length}`;
+          const isFirst = i === 0;
+
+          const partCaption = isFirst
+            ? `🎬 <b>${safeTitle}</b> [${partLabel}]\n\n` +
+              `🆔 <b>Code:</b> <code>${safeCode}</code>\n` +
+              `👩 <b>Actress:</b> ${safeActress}\n` +
+              `🏢 <b>Studio:</b> ${safeStudio}\n` +
+              `⏱ <b>Duration:</b> ${safeDuration}\n` +
+              `📅 <b>Release Date:</b> ${safeDate}\n\n` +
+              `✨ <i>Delivering ${videoFiles.length} video parts for this release...</i>`
+            : `🎬 <b>${safeTitle}</b> [${partLabel}]\n🆔 <code>${safeCode}</code>`;
+
+          lastResponse = await this.sendVideo(chatId, code, part.file_id, partCaption);
+        }
+
+        return lastResponse;
+      }
+
+      // Single video release
+      const primaryVideoFileId = videoFiles[0]?.file_id || tgRecord.telegram.video_file_id;
 
       const caption =
         `🎬 <b>${safeTitle}</b>\n\n` +
@@ -152,12 +211,10 @@ export class TelegramBotService {
         `📅 <b>Release Date:</b> ${safeDate}\n\n` +
         `✨ <i>Delivered instantly by JAVTIFUL Bot</i>`;
 
-      // Method A: sendVideo with file_id
-      if (tgRecord.telegram.video_file_id) {
-        return this.sendVideo(chatId, code, tgRecord.telegram.video_file_id, caption);
+      if (primaryVideoFileId) {
+        return this.sendVideo(chatId, code, primaryVideoFileId, caption);
       }
 
-      // Method B: copyMessage from source channel
       return this.copyMessage(
         chatId,
         code,
@@ -183,12 +240,12 @@ export class TelegramBotService {
       return this.sendMessage(chatId, message, code);
     }
 
-    // CASE 3: Missing Code (neither in Telegram DB nor GitHub)
+    // CASE 3: Missing Code
     const safeCode = escapeHtml(code);
     const notFoundMessage =
       `❌ <b>Video Not Found</b>\n\n` +
       `We could not find any records for code: <code>${safeCode}</code>.\n\n` +
-      `Please verify the JAV code formatting (e.g. <code>016DHT-0881</code>) or browse our web catalog.`;
+      `Please verify the JAV code formatting (e.g. <code>ADN-557</code> or <code>016DHT-0881</code>) or browse our web catalog.`;
 
     return this.sendMessage(chatId, notFoundMessage, code);
   }
@@ -202,8 +259,8 @@ export class TelegramBotService {
       `This bot delivers high-definition JAV videos directly inside Telegram.\n\n` +
       `<b>How to use:</b>\n` +
       `1. Browse the web catalog and click <b>GET VIDEO</b> on any title.\n` +
-      `2. Or send a command here: <code>/start 016DHT-0881</code>\n` +
-      `3. The bot will automatically deliver the video file to this chat.\n\n` +
+      `2. Or send a command here: <code>/start ADN-557</code>\n` +
+      `3. The bot will automatically deliver all video parts and media to this chat.\n\n` +
       `Type /help for more instructions.`;
 
     return this.sendMessage(chatId, text);
@@ -216,7 +273,8 @@ export class TelegramBotService {
     const text =
       `ℹ️ <b>JAVTIFUL Bot Help & Guide</b>\n\n` +
       `• <b>Deep Linking:</b> Click <b>GET VIDEO</b> on the website to open the bot with the pre-filled code.\n` +
-      `• <b>Manual Request:</b> Send <code>/start CODE</code> (e.g. <code>/start 016DHT-0881</code>).\n` +
+      `• <b>Multi-Part Videos:</b> If a code has multiple video parts (e.g., Part 1, Part 2), the bot delivers all parts automatically.\n` +
+      `• <b>Manual Request:</b> Send <code>/start CODE</code> (e.g. <code>/start ADN-557</code>).\n` +
       `• <b>Fast Search:</b> Just type a code in this chat to search.\n` +
       `• <b>Support:</b> All video files are delivered via Telegram cloud streaming without downloading.`;
 

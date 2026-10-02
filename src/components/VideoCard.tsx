@@ -1,5 +1,5 @@
 import React from 'react';
-import { Send, Eye, Clock, Calendar } from 'lucide-react';
+import { Send, Eye, Clock, Calendar, Layers, Image as ImageIcon } from 'lucide-react';
 import type { VideoRecord } from '../types/video.ts';
 
 interface VideoCardProps {
@@ -14,6 +14,8 @@ export const VideoCard: React.FC<VideoCardProps> = ({
   botUsername = 'JavtifulBot',
 }) => {
   const telegramDeepLink = `https://t.me/${botUsername}?start=${encodeURIComponent(video.code)}`;
+  const videoPartsCount = video.telegram?.videos?.length || 0;
+  const galleryCount = video.gallery?.length || 0;
 
   return (
     <article
@@ -43,14 +45,30 @@ export const VideoCard: React.FC<VideoCardProps> = ({
         <div className="absolute inset-0 bg-gradient-to-t from-[#111827] via-transparent to-transparent opacity-80" />
 
         {/* JAV Code Badge */}
-        <div className="absolute top-2.5 left-2.5 rounded-md bg-black/80 px-2 py-0.5 text-xs font-mono font-bold text-white border border-white/10 backdrop-blur-xs">
-          {video.code}
+        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+          <div className="rounded-md bg-black/80 px-2 py-0.5 text-xs font-mono font-bold text-white border border-white/10 backdrop-blur-xs">
+            {video.code}
+          </div>
+          {videoPartsCount > 1 && (
+            <div className="flex items-center gap-1 rounded-md bg-rose-600/90 px-1.5 py-0.5 text-[10px] font-bold text-white border border-rose-400/30 backdrop-blur-xs shadow-sm">
+              <Layers className="h-2.5 w-2.5" />
+              <span>{videoPartsCount} Parts</span>
+            </div>
+          )}
         </div>
 
-        {/* Duration badge */}
-        <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 rounded bg-black/80 px-2 py-0.5 text-[11px] font-mono text-slate-200 backdrop-blur-xs">
-          <Clock className="h-3 w-3 text-slate-400" />
-          <span>{video.duration}</span>
+        {/* Duration badge and Gallery badge */}
+        <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5">
+          {galleryCount > 0 && (
+            <div className="flex items-center gap-1 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-mono text-slate-300 backdrop-blur-xs">
+              <ImageIcon className="h-3 w-3 text-sky-400" />
+              <span>{galleryCount}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-1 rounded bg-black/80 px-2 py-0.5 text-[11px] font-mono text-slate-200 backdrop-blur-xs">
+            <Clock className="h-3 w-3 text-slate-400" />
+            <span>{video.duration}</span>
+          </div>
         </div>
 
         {/* Hover Quick Actions */}
@@ -71,7 +89,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
             target="_blank"
             rel="noreferrer"
             onClick={(e) => e.stopPropagation()}
-            title="Get original video in Telegram bot"
+            title="Get video in Telegram bot"
             className="flex items-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 text-xs font-bold shadow-md transition-colors"
           >
             <Send className="h-3.5 w-3.5" />
@@ -107,11 +125,9 @@ export const VideoCard: React.FC<VideoCardProps> = ({
             {video.date}
           </span>
 
-          {video.genres.length > 0 && (
-            <span className="text-slate-400 truncate max-w-[120px]">
-              {video.genres[0]}
-            </span>
-          )}
+          <span className="text-[10px] uppercase font-semibold text-rose-400/80">
+            Telegram Link
+          </span>
         </div>
       </div>
     </article>

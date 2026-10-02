@@ -1,5 +1,17 @@
+export interface TelegramVideoPart {
+  message_id: number;
+  file_id: string;
+  file_unique_id?: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+  file_size?: number;
+  mime_type?: string;
+  label?: string;
+}
+
 export interface VideoRecord {
-  code: string;           // Canonical JAV code (e.g. 016DHT-0881, SSIS-892)
+  code: string;           // Canonical JAV code (e.g. ADN-557, 016DHT-0881, SSIS-892)
   title: string;          // Video title
   url?: string;           // javtiful.com video URL
   thumb: string;          // Main thumbnail / cover image URL
@@ -8,11 +20,17 @@ export interface VideoRecord {
   actresses: string[];    // Array of actress names
   studio: string | null;  // Studio / Label name
   genres: string[];       // Genres list
-  gallery?: string[];     // Optional screenshot URLs for gallery
+  gallery?: string[];     // Screenshot URLs for post gallery
   telegram?: {
     channel_id?: string;
     message_id?: number;
     video_file_id?: string;
+    duration?: number;
+    width?: number;
+    height?: number;
+    file_size?: number;
+    mime_type?: string;
+    videos?: TelegramVideoPart[]; // Multi-part videos for this release
   };
 }
 
